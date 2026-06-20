@@ -17,3 +17,9 @@ _build/
 .*.aux
 .lia.cache
 .nia.cache
+
+# Lean build artifacts
+*.olean
+*.ilean
+*.c.o
+.lake/

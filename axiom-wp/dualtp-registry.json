@@ -1,0 +1,19 @@
+{
+  "_comment": "Dual Coq+Lean cross-validation registry (see ../frama-c-dual-tp-spec.md). One entry per trust-bearing lemma. 'status' is honest per side; a lemma is dual-TP CERTIFIED only when coq+lean are verified AND crosscheck_3way is 'pass'. The 3-way structural cross-check tooling (dualtp/) is not yet built — see DUALTP-STATUS.md.",
+  "lemmas": [
+    {
+      "qualname": "Memory.separated_trans",
+      "trust_class": "coqwp-realization",
+      "statement_informal": "included p a q b -> separated q b r c -> separated p a r c",
+      "why3": { "source": "coqwp-goal", "locator": "coqwp/Memory.v : (* Why3 goal *) Lemma separated_trans" },
+      "coq":  "coqwp/Memory_hardened.v",
+      "lean": "leanwp/Memory.lean",
+      "acsl_site": null,
+      "status": {
+        "coq":  "verified: Closed under the global context (coqwp/check.sh)",
+        "lean": "verified: Lean 4.31.0, axioms [propext, Classical.choice, Quot.sound] (leanwp/check.sh)",
+        "crosscheck_3way": "not-built"
+      }
+    }
+  ]
+}

@@ -43,7 +43,7 @@ green actually depends on.
 ## Why we did NOT patch `sconst` to close the strncpy goal (a rigor decision)
 
 The open goal `log_transfer_call_strncpy_2_requires_valid_nstring_src`
-(`../tests/small_example/coq/`) needs `is_sint8` of the string's char bytes. The
+(`../../tests/small_example/coq/`) needs `is_sint8` of the string's char bytes. The
 tempting "fix" is to give `sconst` a definition that implies it. **That would be
 unsound**, and the reasoning is the heart of this audit:
 

@@ -1,0 +1,56 @@
+name: axiom-wp dual-TP
+
+# Gate axiom-wp's trust root with BOTH provers (see frama-c-dual-tp-spec.md):
+#   - coqwp/check.sh : every *_hardened.v compiles, no Admitted/admit, and every
+#     lemma is "Closed under the global context" or within its allowed standard axioms.
+#   - leanwp/check.sh: every dual-TP twin compiles and its #print axioms is a subset
+#     of {propext, Classical.choice, Quot.sound}.
+# Both gates are FAIL-CLOSED: a missing prover toolchain exits non-zero, never PASS.
+
+on:
+  push:
+    paths:
+      - 'axiom-wp/**'
+      - '.github/workflows/axiom-wp.yml'
+  pull_request:
+    paths:
+      - 'axiom-wp/**'
+      - '.github/workflows/axiom-wp.yml'
+  workflow_dispatch:
+
+jobs:
+  coq:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "4.14"
+      # Coq MUST be installed before Why3: the Why3 opam package builds its Coq
+      # realizations (lib/why3/coq/BuiltIn.vo, ...) only when Coq is already present.
+      - name: Install Coq 8.20.1
+        run: opam install -y coq.8.20.1
+      - name: Install Why3 1.8.2 (with Coq realizations)
+        run: |
+          opam install -y why3.1.8.2
+          test -f "$(opam exec -- why3 --print-libdir)/coq/BuiltIn.vo" \
+            || { echo "::error::Why3 Coq realizations missing (BuiltIn.vo); Coq must precede Why3"; exit 1; }
+      - name: Versions
+        run: opam exec -- sh -c 'coqc --version | head -1; why3 --version'
+      - name: Run coqwp gate
+        run: opam exec -- bash axiom-wp/coqwp/check.sh
+
+  lean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install elan + Lean 4.31.0
+        run: |
+          curl -sSfL https://elan.lean-lang.org/elan-init.sh \
+            | sh -s -- -y --default-toolchain leanprover/lean4:v4.31.0
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Versions
+        run: lean --version
+      - name: Run leanwp gate (fail-closed)
+        run: bash axiom-wp/leanwp/check.sh
