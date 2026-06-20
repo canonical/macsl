@@ -30,7 +30,8 @@ UserAccount db[MAX_USERS];
    clean WP proof of the whole file is a matter of loop invariants + those coarse
    library specs, not impossibility.)
 
-   ALL FOUR banking policies are instrumented ON THIS FILE (verified):
+   FIVE policies are instrumented ON THIS FILE (verified) — the four banking
+   policies plus H-E:
      - H-R nonrepud_complete   : a balance changed ==> audit_len grew
                                  [\targets transfer, \postcond — proves at default]
      - H-R nonrepud_append_only: every earlier AuditRecord is unchanged (FULL
@@ -49,6 +50,11 @@ UserAccount db[MAX_USERS];
                                  use gate. The call-site goal goes RED if the grant
                                  is removed (mutation-verified). [\targets transfer,
                                  \precond]
+     - H-E priv_monotonic      : a transfer never RAISES anyone's privilege (roles
+                                 0=super-admin..2=user, smaller = more privilege, so
+                                 the law is role >= \old). Scoped to transfer; the
+                                 API-spanning \diff(\ALL,{main}) form is SMT-incomplete
+                                 on the libc-heavy routes. [\targets transfer, \postcond]
    H-S originally did NOT fit: main.c folds authentication INTO transfer, and a
    file-level `happy \precond` cannot name transfer's `token` PARAMETER (WP:
    "unbound logic variable token"). Adding the request-scoped `session_authenticated`
@@ -245,6 +251,19 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
 /*@ happy \prop, \name("authn"),
       \targets({transfer}), \context(\precond),
       session_authenticated == 1;
+*/
+
+/* H-E privilege monotonicity (no escalation): a transfer must never RAISE anyone's
+   privilege. main.c's roles are 0=super-admin, 1=admin, 2=user, so a SMALLER number
+   = MORE privilege; escalation = a role decreasing, and the law is role >= \old.
+   Scoped to transfer (the RBAC-guarded money operation) so it proves cleanly: the
+   roadmap's stronger API-spanning form \diff(\ALL,{main}) is SMT-incomplete on
+   main.c's libc-heavy routes (the trivial role-preservation goal drowns in
+   strtok/strcmp context — timeout, not a refutation). The confused-deputy attack
+   (a helper that lowers a role) is the matching red in banking_attacks.c. */
+/*@ happy \prop, \name("priv_monotonic"),
+      \targets({transfer}), \context(\postcond),
+      \forall integer i; 0 <= i < MAX_USERS ==> db[i].role >= \old(db[i].role);
 */
 
 /* =========================================================================

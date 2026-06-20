@@ -9,6 +9,7 @@ int balance[NACC];
 int audit[NLOG];
 int audit_len = 0;
 int session_ok = 0;
+int role[NACC];         /* privilege level: 0 = super-admin .. 2 = user (smaller = more) */
 
 /*@ assigns session_ok; ensures \result != 0 ==> session_ok == 1; */
 int authenticate(int user, int pass);
@@ -77,4 +78,18 @@ void unauth_endpoint(int from, int to, int amount)
 /*@ happy \prop, \name("authn"),
       \targets({transfer}), \context(\precond),
       session_ok == 1;
+*/
+
+/* ATTACK 5 — H-E privilege escalation (the confused deputy): a helper reachable
+   from unprivileged code that LOWERS a user's role (grants super-admin), so the
+   account ends with more privilege than it began. The monotonicity postcondition
+   role[k] >= \old(role[k]) goes red at this function. (Compliant counterpart: the
+   priv_monotonic policy on main.c's transfer, which never raises a role.) */
+/*@ requires 0 <= i < NACC;
+    requires role[i] >= 1;            // currently below super-admin
+    assigns role[i]; */
+void escalate(int i) { role[i] = 0; }    /* confused deputy: grant super-admin */
+/*@ happy \prop, \name("priv_monotonic"),
+      \targets({escalate}), \context(\postcond),
+      \forall integer k; 0 <= k < NACC ==> role[k] >= \old(role[k]);
 */
