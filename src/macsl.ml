@@ -54,7 +54,7 @@ let () = Self.set_warn_status zero_wkey Log.Wactive
 (* HAPPY policy representation                                          *)
 (* ------------------------------------------------------------------ *)
 
-type context = Writing | Reading
+type context = Writing | Reading | Postcond
 
 type target = TgAll | TgSet of string list
 
@@ -81,6 +81,7 @@ let gathered : policy list ref = ref []
 
 (* commands/contexts are predicate builtins; meta-variables are term builtins *)
 let kw_preds = [ "\\prop"; "\\writing"; "\\reading"; "\\calling";
+                 "\\postcond"; "\\precond";
                  "\\weak_invariant"; "\\strong_invariant" ]
 let kw_terms = [ "\\written"; "\\lhost_written"; "\\read"; "\\called" ]
 
@@ -188,10 +189,11 @@ let process_property tc loc = function
     let p_name = as_string tc "policy name must be a string" ename in
     let p_target = parse_targets tc etargets in
     let p_context = match econtext.lexpr_node with
-      | PLvar "\\writing" -> Writing
-      | PLvar "\\reading" -> Reading
+      | PLvar "\\writing"  -> Writing
+      | PLvar "\\reading"  -> Reading
+      | PLvar "\\postcond" -> Postcond
       | _ -> tc.error econtext.lexpr_loc
-               "macsl supports \\context(\\writing) and \\context(\\reading)"
+               "macsl supports \\context(\\writing | \\reading | \\postcond)"
     in
     let eproperty = match tail with
       | [ x ] -> x
@@ -251,6 +253,24 @@ let instantiate pol kf stmt assoc =
                      (AAssert ([], toplevel_predicate ~kind:Assert named)))
     in
     Annotations.add_code_annot emitter ~kf stmt annot;
+    true
+  end
+
+(* H-R: inject [pol]'s predicate as a *checked* postcondition on [kf] (no
+   meta-variable substitution — the predicate is whole, over globals + \old).
+   `Check` means WP must prove it but callers do not get to assume it. *)
+let emit_ensures pol kf =
+  let pred = pol.p_property kf [] in
+  if Logic_utils.is_trivially_true pred then false
+  else begin
+    let label =
+      if Number_assertions.get ()
+      then (incr counter; Printf.sprintf "%s_%d" pol.p_name !counter)
+      else pol.p_name
+    in
+    let named = { pred with pred_name = label :: "meta" :: pred.pred_name } in
+    let ip = Logic_const.new_predicate ~kind:Check named in
+    Annotations.add_ensures emitter kf [ (Normal, ip) ];
     true
   end
 
@@ -379,13 +399,17 @@ let run_policy pol =
     | Reading ->
       let v = new reading_visitor pol in
       visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
+    | Postcond ->
+      List.fold_left (fun acc kf -> if emit_ensures pol kf then acc + 1 else acc)
+        0 kfs
   in
-  let site, ctx = match pol.p_context with
-    | Writing -> "write", "writing"
-    | Reading -> "read",  "reading" in
+  let descr, ctx = match pol.p_context with
+    | Writing  -> "write site",      "writing"
+    | Reading  -> "read site",       "reading"
+    | Postcond -> "target function", "postcond" in
   if n = 0 then
     Self.warning ~wkey:zero_wkey
-      "policy %s expanded to 0 assertions (matched no %s site)" pol.p_name site;
+      "policy %s expanded to 0 obligations (matched no %s)" pol.p_name descr;
   if List_targets.get () then
     Self.result "policy %s [%s]: %d assertion(s) over %d target function(s)"
       pol.p_name ctx n (List.length kfs);

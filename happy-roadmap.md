@@ -55,7 +55,7 @@ milestone that needs genuinely new WP plumbing. The codes `H-T`, `H-I1`, `H-R`, 
 |------|---------------|-----------------|------------------------|--------------------|
 | H-T  | Tampering | write confinement | none — **shipped (Phase 0)** | 0 |
 | H-I1 | Information disclosure (first half) | read confinement | none — symmetric `\reading` pass — **shipped (Phase 1)** | 0–1 |
-| H-R  | Repudiation | audit-log completeness | ghost-log injection | 1 |
+| H-R  | Repudiation | audit-log completeness + append-only | `\postcond` ensures (user-supplied ghost log) — **shipped (Phase 2)** | 1 |
 | H-D  | Denial of service | totality + bounded work | RTE bundle + ghost fuel counter | 1–2 |
 | H-E  | Elevation of privilege | privilege monotonicity | ghost lattice over a protected field | 1–2 |
 | H-S  | Spoofing | check-before-use capabilities | ghost token + call-site `requires` | 2 |
@@ -122,31 +122,36 @@ string it builds. A negative driver (formatter peeks at `disk[3]`) must fail at 
 
 ---
 
-## 3. H-R — Repudiation (audit-log completeness)
+## 3. H-R — Repudiation (audit-log completeness + append-only) — **IMPLEMENTED (Phase 2)**
 
 Non-repudiation, at the level a deductive verifier can honestly claim, is a **completeness and
 immutability theorem about a log**: every protected state change produces a record, and no path can
-rewrite history. Proposed surface (pre-normative — introduces a ghost-log directive):
+rewrite history.
+
+**Shipped realization (the lean version).** macsl implements this through the **`\postcond` context**:
+the user supplies the ghost log and the append code, and macsl injects the obligation as a *checked
+postcondition* on each target function. Surface (tested in `tests/phase2/`):
 ```c
-//@ ghost struct log_t audit_log;          // module ghost, erased at compile, visible to WP
-/*@ happy audit_trail:
-      \targets(\ALL),
-      \context(\writing),
-      \fguard({replay_journal}, \true),
-      \audit(disk, audit_log);             // pre-normative: append + completeness, see lowering
+//@ ghost int log_len = 0;                  // the user's ghost log (length here; + an array for append-only)
+/*@ happy \prop, \name("audit"), \targets(\ALL), \context(\postcond),
+      \old(disk) != disk ==> log_len > \old(log_len);                       // completeness
+*/
+/*@ happy \prop, \name("immut"), \targets(\ALL), \context(\postcond),
+      \forall integer i; 0 <= i < \old(log_len) ==> logbuf[i] == \old(logbuf[i]);  // append-only
 */
 ```
-Lowering composes three existing pieces: (1) declare the module **ghost** `audit_log` (ACSL ghost
-code / a ghost array + a logic length); (2) at each write site to the audited path, inject the ghost
-append **and** a ground `assert` that the append precedes the function's return; (3) attach to every
-non-exempt function two quantified `ensures` — *append-only* `\forall integer i; 0 <= i <
-\old(length(audit_log)) ==> audit_log[i] == \old(audit_log[i])`, and *completeness*
-`disk != \old(disk) ==> length(audit_log) > \old(length(audit_log))`. These are quantified, so unlike
-H-T/H-I1 the dominant cost **is** E-matching on the prefix instantiations; the prefix lemma is a prime
-candidate for the **Coq route** — proved once offline on the `framac-coq8` switch as an ACSL
-`lemma`/`axiomatic`, replayed and cached (`-wp-cache`), then instantiated as an in-scope assumption
-rather than re-derived per goal. (No Coq kernel runs during the routine WP proof — the cache replays;
-cf. the `wp-interactive-coq-replay` discipline.)
+`emit_ensures` types each predicate in the post-state and adds it via
+`Annotations.add_ensures kf [(Normal, new_predicate ~kind:Check P)]`. WP discharges it:
+`audit_pos.c`/`immut_pos.c` prove (`3/3`); `audit_neg.c` (an unlink that forgets to log) and
+`immut_neg.c` (a rewrite of `logbuf[0]`) leave the postcondition **red** (`2/3`).
+
+**Deferred sugar (the heavy version).** A dedicated `\audit(state, log)` directive that
+*auto-declares* the ghost log and *auto-injects* the append at each write site (so the user writes
+neither) is still future work; the manual ghost-log + `\postcond` form above already delivers the
+completeness + immutability theorem. The append-only `\forall` is quantified, so on larger logs the
+dominant cost is E-matching on the prefix instantiations; the prefix lemma is then a candidate for the
+**Coq route** — proved once offline on `framac-coq8` as an ACSL `lemma`/`axiomatic`, replayed and
+cached (`-wp-cache`), instantiated as an in-scope assumption (cf. `wp-interactive-coq-replay`).
 
 **What this is NOT:** cryptographic non-repudiation. The verifier proves the *program* cannot skip or
 rewrite a record; that the log survives on storage, is signed, and binds an identity stays a trusted

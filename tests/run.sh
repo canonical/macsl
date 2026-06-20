@@ -74,5 +74,27 @@ check "read/neg-catches" 'Proved goals: +3 / 4' \
 check "read/pos-allgreen" 'Proved goals: +4 / 4' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase1/reading_pos.c
 
+echo "== Phase-2 cases (H-R audit-log completeness + immutability) =="
+
+# 10. The completeness obligation is injected as a checked postcondition.
+check "audit/print" 'check ensures audit: meta:' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase2/audit_pos.c
+
+# 11. Completeness positive: sys_write logs its change -> provable.
+check "audit/pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase2/audit_pos.c
+
+# 12. Completeness negative: sys_unlink changes disk without logging -> red.
+check "audit/neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase2/audit_neg.c
+
+# 13. Immutability positive: append touches only the new slot -> provable.
+check "immut/pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase2/immut_pos.c
+
+# 14. Immutability negative: rewriting an old slot -> append-only red.
+check "immut/neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase2/immut_neg.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

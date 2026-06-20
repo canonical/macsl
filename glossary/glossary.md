@@ -17,10 +17,21 @@ compatible). Not "broken" — see [design.md](../docs/design.md) §1.
 A global, module-level declaration that ranges over many program points, as opposed to a per-function
 contract. In macsl, written with the `happy` ACSL extension keyword. (MetAcsl uses `meta`.)
 
-### context (`\writing`, `\reading`)
+### context (`\writing`, `\reading`, `\postcond`)
 The class of program points a policy ranges over. Implemented: `\writing` — every memory **write** in
-the target functions (H-T); `\reading` — every memory **read** (H-I1). (Roadmap: `\calling`,
+the target functions (H-T); `\reading` — every memory **read** (H-I1); `\postcond` — each target
+**function's postcondition** (H-R, a `check ensures`, no per-site walk). (Roadmap: `\calling`,
 invariants.)
+
+### audit-log completeness / append-only (H-R)
+The Phase-2 property (non-repudiation, at the level a deductive verifier can claim): a completeness +
+immutability theorem about a log. **Completeness** — "if the protected state changed, the log grew":
+`\old(s) != s ==> log_len > \old(log_len)`. **Append-only / immutability** — "old entries are never
+rewritten": `\forall integer i; 0 <= i < \old(log_len) ==> log[i] == \old(log[i])`. Both are injected
+by the `\postcond` context as checked postconditions; the user supplies the ghost log and the append
+code. STRIDE **Repudiation** — code **H-R**. **Not** cryptographic non-repudiation: that the log
+survives, is signed, and binds an identity on real storage is a trusted boundary the risk study carries
+(roadmap GH1).
 
 ### meta-variable (`\written`, `\read`, …)
 A placeholder in the policy predicate that is bound to the concrete site at instrumentation time. In
@@ -95,13 +106,15 @@ The policy predicate is stored untyped and re-type-checked at **each** write sit
 meta-variable bound to that site (`p_property : kf -> substitution -> predicate`). This is how one
 written policy yields a correctly-typed assert at every site.
 
-### Phase 0 / Phase 1 / milestone M0
+### Phase 0 / 1 / 2 / milestone M0
 Phase 0 = the `\writing` write-confinement checker (H-T); Phase 1 = the `\reading` read-confinement
-checker (H-I1) — both in this repo, working and tested. M0 = "run MetAcsl's own test", the step that
-corrected the no-op misdiagnosis before any code was written.
+checker (H-I1); Phase 2 = the `\postcond` audit-log completeness + append-only checker (H-R) — all in
+this repo, working and tested. M0 = "run MetAcsl's own test", the step that corrected the no-op
+misdiagnosis before any code was written.
 
 ### STRIDE (H-T … H-I2)
 The threat taxonomy (Spoofing, Tampering, Repudiation, Information disclosure, Denial of service,
 Elevation of privilege). HAPPY's roadmap maps one property family to each; the codes `H-T … H-I2` are
-defined in `../happy-roadmap.md`. Implemented so far: **H-T** (Tampering / write confinement) and
-**H-I1** (Information disclosure, first half / read confinement).
+defined in `../happy-roadmap.md`. Implemented so far: **H-T** (Tampering / write confinement),
+**H-I1** (Information disclosure, first half / read confinement), and **H-R** (Repudiation / audit-log
+completeness + append-only).

@@ -7,7 +7,7 @@ eval $(opam env --switch=framac-coq8)
 ./tests/run.sh
 ```
 
-Expected: `9 passed, 0 failed` (6 Phase-0 / H-T + 3 Phase-1 / H-I1).
+Expected: `14 passed, 0 failed` (6 Phase-0 / H-T + 3 Phase-1 / H-I1 + 5 Phase-2 / H-R).
 
 ## Why a shell runner and not ptests?
 
@@ -31,6 +31,14 @@ which clashes depending on load order. `run.sh` sidesteps that by running with
 |---|---|---|
 | `reading_pos.c` | `\separated(\read, &secret)`, nothing reads `secret` | all goals proved (`4/4`) |
 | `reading_neg.c` | same; `leak` reads `secret` | the `sink = secret` read assert unproved (`3/4`) — the **negative control** |
+
+### `phase2/` — H-R audit-log completeness + append-only (`\postcond`)
+| File | Policy | Expected |
+|---|---|---|
+| `audit_pos.c` | completeness; `sys_write` logs its change | `3/3` |
+| `audit_neg.c` | completeness; `sys_unlink` changes `disk` without logging | completeness ensures unproved (`2/3`) |
+| `immut_pos.c` | append-only; `append` writes only the new slot | `3/3` |
+| `immut_neg.c` | append-only; `rewrite` overwrites `logbuf[0]` | append-only ensures unproved (`2/3`) |
 
 Each `*_pos.c` / `*_neg.c` is a **prove/fail pair**: the negative control going red is what makes a
 green on the positive control meaningful (the non-vacuity gate — see `../docs/design.md` §4).

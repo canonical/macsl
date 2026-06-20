@@ -64,6 +64,10 @@ source) — the same faithfulness discipline used elsewhere in this project.
      `AddrOf`/`StartOf`/`SizeOf` are handled specially, results are deduped per statement
      (`Term_lval.Set`) and emitted in a `DoChildrenPost`. Binds `\read` to each read lvalue's address.
    Both bind via `Logic_utils.mk_logic_AddrOf`.
+   - `\postcond` (H-R) does **not** walk sites: for each target function it types the whole policy
+     predicate (`assoc = []`) in the post-state and injects it as a *checked* postcondition
+     (`Logic_const.new_predicate ~kind:Check` + `Annotations.add_ensures kf [(Normal, ip)]`). `Check`
+     means WP proves it but callers do not assume it.
 3. **Emit** (`emit_at`). The closure is instantiated with that binding, trivially-true results are
    dropped, and the predicate is added as `AAssert ([], toplevel_predicate ~kind:Assert P)` under the
    `macsl` `Emitter`, named `<policy>: meta: …`.
@@ -91,7 +95,7 @@ Single module, `src/macsl.ml`:
 | builtins | idempotent `Logic_builtin.register` of the keywords |
 | custom typer | `meta_type_predicate`/`meta_type_term` — substitute the meta-variables; `delay_prop` |
 | parser | `process_property`/`process_meta`; `register_parsing` (the `happy` extension) |
-| instrumentation | shared `instantiate`; `writing_visitor` (H-T) and `reading_visitor` (H-I1); `kfs_of_target`, `run_policy` (dispatches on `\context`) |
+| instrumentation | shared `instantiate` (per-site assert) + `emit_ensures` (per-function postcondition); `writing_visitor` (H-T), `reading_visitor` (H-I1), `\postcond` fold (H-R); `kfs_of_target`, `run_policy` (dispatches on `\context`) |
 | entry | `Ast.apply_after_computed run` |
 
 ## 6. Deviations from `macsl-impl.md`

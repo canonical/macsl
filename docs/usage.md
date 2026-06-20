@@ -62,9 +62,14 @@ A HAPPY policy is a global ACSL annotation introduced by the `happy` keyword:
 - **`\context(\reading)`** (Phase 1, H-I1) ranges over every **read** site (each lvalue read inside an
   expression); the meta-variable **`\read`** denotes the address of the read lvalue, `\lhost_read` its
   base.
+- **`\context(\postcond)`** (Phase 2, H-R) emits `P` as a **checked postcondition** (`check ensures`)
+  on each target function — no per-site walk, no meta-variable. `P` is a whole predicate over globals
+  and `\old(...)`; use it for function-level obligations (audit-log completeness, append-only). `Check`
+  means WP must prove it but callers do not assume it.
 - **`\targets(\ALL)`** ranges over every defined function; **`\targets({f,g})`** over the named ones.
-- The predicate is re-typed at each matching site with the meta-variable bound to that site, then
-  emitted as `assert <name>: meta: P`.
+- For `\writing`/`\reading` the predicate is re-typed at each matching site (the meta-variable bound to
+  that site) and emitted as `assert <name>: meta: P`; for `\postcond` it is emitted once per function
+  as `check ensures <name>: meta: P`.
 
 Typical `P` is a separation predicate (confinement):
 
@@ -73,6 +78,22 @@ Typical `P` is a separation predicate (confinement):
 \separated(\written, buf + (0 .. n-1)) //   none writes into a buffer region
 \separated(\read,    &secret)          // read confinement:  nothing READS `secret`  (H-I1)
 ```
+
+For `\postcond` (H-R — audit-log completeness/immutability), supply a ghost log and write a
+function-level obligation:
+
+```c
+//@ ghost int log_len = 0;
+/*@ happy \prop, \name("audit"), \targets(\ALL), \context(\postcond),
+      \old(disk) != disk ==> log_len > \old(log_len);   // every change is logged (completeness)
+*/
+/*@ happy \prop, \name("immut"), \targets(\ALL), \context(\postcond),
+      \forall integer i; 0 <= i < \old(log_len) ==> logbuf[i] == \old(logbuf[i]);  // append-only
+*/
+```
+macsl proves the program's logging *discipline*; that the log persists/ is signed on real storage stays
+a trusted boundary for the risk study (roadmap GH1). The ghost log and the append code are yours;
+macsl supplies the obligation that ties writes to log growth.
 
 > **What read confinement is and is NOT.** `\separated(\read, R)` proves no non-exempt code path
 > *syntactically reads* region `R`. It is **not** noninterference — it says nothing about what an
