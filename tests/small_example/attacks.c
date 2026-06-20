@@ -12,6 +12,7 @@ int session_ok = 0;
 int role[NACC];         /* privilege level: 0 = super-admin .. 2 = user (smaller = more) */
 int pin[NACC];          /* H-I1: confidential per-account PIN */
 int leak_sink = 0;      /* a public sink an attacker exfiltrates into */
+int caller_acct = 0;    /* request-scoped caller account (see rbac_horizontal.c) */
 
 /*@ assigns session_ok; ensures \result != 0 ==> session_ok == 1; */
 int authenticate(int user, int pass);
@@ -133,4 +134,30 @@ void parse_request(int len)
 /*@ happy \prop, \name("availability"),
       \targets({parse_request}), \context(\total),
       \true;
+*/
+
+/* ATTACK 9 — H-E horizontal access control (FE2, the broken-access-control deputy):
+   a transfer that OMITS the own-account guard, so a role-2 (User) caller can debit
+   a FOREIGN account (from != caller_acct). The rbac_own_account postcondition
+   (a role-2 caller decreases no account but its own) goes red. The verified form of
+   "a User moved money out of someone else's account." Compliant counterpart:
+   rbac_horizontal.c's guarded transfer. */
+/*@ requires 0 <= caller_acct < NACC && 0 <= from < NACC && 0 <= to < NACC;
+    requires 0 <= audit_len < NLOG;
+    requires amount > 0;
+    assigns balance[from], balance[to], audit[audit_len], audit_len; */
+int transfer_cross(int from, int to, int amount)
+{
+  /* NO horizontal-RBAC gate: a User may debit ANY account -> broken access control */
+  if (balance[from] < amount) return -1;
+  balance[from] -= amount;
+  balance[to]   += amount;
+  log_transfer(from, to, amount);
+  return 0;
+}
+/*@ happy \prop, \name("rbac_own_account"),
+      \targets({transfer_cross}), \context(\postcond),
+      role[caller_acct] == 2 ==>
+        \forall integer a; 0 <= a < NACC && a != caller_acct ==>
+          balance[a] >= \old(balance[a]);
 */

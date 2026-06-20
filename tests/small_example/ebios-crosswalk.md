@@ -21,7 +21,7 @@ threat model the EBIOS study independently derived?*
 | FE (severity) | EBIOS scenario · likelihood · risk | Verifying HAPPY policy → TU | Verdict (plane) | Coverage |
 |---|---|---|---|---|
 | **FE1** privilege bypass on transfer · **G4** | SS2/OS2 · V2 · **High** | H-S `authn` (capability granted only after token validation) → `main.c::transfer` | **52/52** (hard) | ✅ capability gate verified; *clearance-tier* logic code-enforced, not asserted |
-| **FE2** User debits another's account · **G4** | SS1/OS1 · V2 · **High** | — (no dedicated policy) | code-enforced only | ⚠️ **GAP** — horizontal RBAC ("own account only") is in the code but is **not** a verified hyperproperty |
+| **FE2** User debits another's account · **G4** | SS1/OS1 · V2 · **High** | H-E horizontal `rbac_own_account` → `rbac_horizontal.c` | **13/13** + red `transfer_cross` (hard) | ✅ **now verified** — a role-2 caller decreases no foreign account; driver-proved (string-keyed `main.c` form context-bloats, like `nonrepud_append_only`); `main.c` body already enforces it |
 | **FE3** balance corrupted / bad amount · **G4** | SS3/OS3 · V2 · **High** | H-T `bal_integrity` (only `transfer`/`main` may write a balance) → `main.c` | **52/52** (hard) | ✅ off-path tampering confined; *amount>0 / sufficient-funds* checks code-enforced, not asserted |
 | **FE4** forged/non-registered token accepted · **G3** | SS2/OS2 · V2 · **High** | H-S `authn` → `main.c::transfer` | **52/52** (hard) | ✅ check-before-use verified (RED if grant removed — mutation-checked) |
 | **FE5** missing / altered audit record · **G3** | SS4/OS4 · V2 · **Moderate** | H-R `nonrepud_complete` → `main.c::transfer`; H-R `nonrepud_append_only` → `audit_append_frame.c` | **52/52** + **6/6** (hard) | ✅ completeness + append-only both verified — **but conditional, see FE10** |
@@ -34,23 +34,27 @@ threat model the EBIOS study independently derived?*
 
 ## 2. Verdict — does `main.c` match the EBIOS report?
 
-**Largely yes, with three honest residual risks.** Of 11 feared events, the EBIOS threat model
-(derived code-blind) and the verification align well: the four high-value money/identity events
+**Largely yes — FE2 now closed, two honest residual risks remain.** Of 11 feared events, the EBIOS
+threat model (derived code-blind) and the verification align well: the high-value money/identity events
 verified directly on `main.c`'s real `transfer` (FE1, FE3, FE4, FE5, FE9 — **52/52**), and the
 confidentiality + availability families on the flagship's companion drivers. Notably **FE9 (privilege
 escalation)** — the gap the disjoint EBIOS reviewer independently caught — *is* discharged on `main.c`
 by `priv_monotonic`, a clean cross-validation of the loop.
 
+**FE2 closed (this iteration).** The horizontal-RBAC gap is now a verified hyperproperty
+`rbac_own_account` (H-E horizontal): *a role-2 caller decreases no account but its own*. Proved
+deterministically on the clean integer driver `rbac_horizontal.c` (**13/13**) with the matching red
+control `transfer_cross` in `attacks.c` — the same driver-proof pattern used for `nonrepud_append_only`
+when `main.c`'s string-keyed `transfer` context-bloats. `main.c`'s executable C is unchanged (its body
+already enforces the guard).
+
 ### Residual risks (citable to their EBIOS scenario IDs — for W5 treatment)
 1. **FE10 / SS8 (G4, High) — silent audit saturation.** `nonrepud_complete` holds under
    `requires 0 <= audit_len < 1024`. The EBIOS-feared case (log full, transfers still succeed
-   unlogged) is *outside* the proved envelope. **Strongest finding.** Treatment: a verified
+   unlogged) is *outside* the proved envelope. **Strongest remaining finding.** Treatment: a verified
    at-capacity policy (block transfers, or assert `audit_len < CAP` as an invariant the service
    maintains) — not assume it.
-2. **FE2 / SS1 (G4, High) — horizontal RBAC.** "A role-2 user may debit only their own account" is
-   enforced in `transfer`'s body but is not stated as a HAPPY hyperproperty. Treatment: add a policy
-   asserting no cross-account debit by a User-tier caller.
-3. **FE11 / SS9 (G3, Moderate) — token lifecycle.** Expiry/revocation/leakage sit on the declared
+2. **FE11 / SS9 (G3, Moderate) — token lifecycle.** Expiry/revocation/leakage sit on the declared
    trusted boundary; honest scope limit, not a defect — record as accepted residual or extend scope.
 
 ### Plane-limited coverage (verified, but not on `main.c` itself)

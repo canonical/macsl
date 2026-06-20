@@ -145,8 +145,9 @@ echo "== Worked example (small_example: all seven HAPPY families together) =="
 check "banking/compliant" 'Proved goals: +63 / 63' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/compliant.c
 
-# 25. Eight attacks, one per policy: exactly eight goals red.
-check "banking/attacks" 'Proved goals: +41 / 49' \
+# 25. Nine attacks, one per policy: exactly nine goals red (attack 9 = the FE2
+#     horizontal-RBAC cross-account debit, rbac_own_account on transfer_cross).
+check "banking/attacks" 'Proved goals: +52 / 61' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/attacks.c
 
 # 26. The policies proved on main.c's REAL transfer(), through the ACSL libc
@@ -184,6 +185,14 @@ check "hd/availability-rte" 'Proved goals: +23 / 23' \
 #     -wp-rte the no-fault half). See small_example/strtok_terminates.c.
 check "hd/strtok-terminates" 'Proved goals: +17 / 17' \
   frama-c "${BASE[@]}" "${WP[@]}" -wp-rte -macsl tests/small_example/strtok_terminates.c
+
+# 30. FE2 horizontal access control, isolated and PROVED. Closes the EBIOS
+#     crosswalk's FE2 gap: a role-2 (User) caller may debit ONLY their own
+#     account. On main.c's string-keyed transfer the postcondition context-bloats
+#     (caller-lookup loop + libc strcmp), like nonrepud_append_only; proved here on
+#     the clean integer model. The matching cross-account attack is red in case 25.
+check "rbac/horizontal-own-account" 'Proved goals: +13 / 13' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/rbac_horizontal.c
 
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]
