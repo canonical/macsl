@@ -25,8 +25,12 @@ UserAccount db[MAX_USERS];
 
 /* --- Audit log (non-repudiation). Every balance-changing transfer appends one
    record here; old records are never overwritten. The HAPPY policies that make
-   this a machine-checked guarantee are verified on the WP-tractable distillation
-   `banking.c` (this file's socket/string layer is outside WP's reach):
+   this a machine-checked guarantee are demonstrated on the focused, fully-
+   specified core `banking.c`. (This file's libc calls -- strtok/strcmp/strncpy,
+   read/write, socket/accept -- ARE specified by Frama-C's ACSL libc, and the
+   variadic snprintf/sscanf go through the Variadic plugin; a clean WP proof of
+   the whole file is a matter of loop invariants + those coarse library specs,
+   not impossibility.) The policies:
      - H-R nonrepud_complete   : balance changed  ==> audit_len grew
      - H-R nonrepud_append_only: \forall i<old(audit_len); audit[i] unchanged
      - H-S authn               : transfer requires an authenticated session

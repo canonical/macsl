@@ -1,8 +1,15 @@
-/* HAPPY policies for the small_example banking backend, on the WP-tractable
-   distillation of main.c's security-relevant core (auth / transfer / audit).
-   main.c's socket + string layer (strtok/snprintf/sockets) is outside WP's
-   reach; the logic that the STRIDE policies care about lives here and is
-   machine-checked by `macsl -wp`.
+/* HAPPY policies for the small_example banking backend, on a focused,
+   fully-contracted distillation of main.c's security-relevant core
+   (auth / transfer / audit).
+
+   NB: main.c is NOT beyond WP. Frama-C's ACSL libc specifies the functions it
+   uses -- strcmp/strncpy/strchr/strtok/strlen (string.h), read/write/close
+   (unistd.h), socket/bind/listen/accept (sys/socket.h) -- and the variadic
+   snprintf/sscanf are handled by the Variadic plugin. A clean WP proof of
+   main.c is a matter of loop invariants plus the coarse (assigns/\from,
+   bounded-result) nature of those library specs -- effort, not impossibility.
+   banking.c is simply a crisp, fully-specified core that makes the policy
+   demonstration unambiguous.
 
    This file is the COMPLIANT system: every policy holds (all goals proved).
    banking_attacks.c is the matching set of negative controls. */

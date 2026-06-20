@@ -6,12 +6,16 @@ policies that secure it.
 ## Files
 
 - **`main.c`** — the full example: an HTTP server with three routes. It now also carries the **audit
-  log + `log_transfer`** (non-repudiation): every balance-changing transfer appends a record.
-  *main.c's socket/string layer (`strtok`/`snprintf`/sockets) is outside WP's reach*, so the HAPPY
-  policies are not machine-checked on it directly — they are listed there as intent and verified on:
-- **`banking.c`** — the WP-tractable distillation of the security-relevant core (accounts, the audit
-  log, `authenticate`, `log_transfer`, `transfer`), with all four policies. This is the **compliant**
-  system: `macsl -wp` proves **18/18**.
+  log + `log_transfer`** (non-repudiation): every balance-changing transfer appends a record. Its libc
+  calls *are* specified by Frama-C's ACSL libc (`strcmp`/`strncpy`/`strchr`/`strtok`/`strlen` in
+  `string.h`, `read`/`write`/`close` in `unistd.h`, `socket`/`bind`/`listen`/`accept` in
+  `sys/socket.h`; the variadic `snprintf`/`sscanf` go through the **Variadic** plugin). A clean WP
+  proof of `main.c` is a matter of loop invariants plus the coarse (`assigns`/`\from`, bounded-result)
+  nature of those library specs — effort, not impossibility. We demonstrate the policies on the
+  focused, fully-specified core instead, to keep the demo unambiguous:
+- **`banking.c`** — a focused, fully-contracted distillation of the security-relevant core (accounts,
+  the audit log, `authenticate`, `log_transfer`, `transfer`), with all four policies. This is the
+  **compliant** system: `macsl -wp` proves **18/18**.
 - **`banking_attacks.c`** — the matching **negative controls**: four attacks, one per policy, each
   caught (`25/29` — exactly four goals red).
 
