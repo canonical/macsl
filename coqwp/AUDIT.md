@@ -156,7 +156,10 @@ All ~57 admitted lemmas across the vendored coqwp are now machine-checked:
 | `ArcTrigo.v` | 2  | genuine; 2 standard Reals axioms |
 | `ExpLog.v`   | 1  | genuine; 2 standard Reals axioms |
 
-CI gate: run `./check.sh` — per file it asserts no `Admitted`/`admit`, compiles,
+CI gate: `.github/workflows/coqwp.yml` runs `./check.sh` on every push/PR that
+touches `coqwp/**` (Coq 8.20.1 + Why3 1.8.2 via opam; Coq installed before Why3
+so the Coq realizations are built). Per file it asserts no `Admitted`/`admit`,
+compiles,
 and every lemma is `Closed under the global context` or depends solely on that
 file's whitelisted standard axioms (Memory: none; Vset:
 `functional_extensionality`; Cfloat/ArcTrigo/ExpLog: `functional_extensionality`

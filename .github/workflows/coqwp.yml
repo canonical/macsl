@@ -1,0 +1,49 @@
+name: coqwp hardening
+
+# Gate the coqwp trust-root hardening: every admitted WP/Coq lemma we re-proved
+# must keep compiling and stay within its whitelisted standard axioms.
+# Runs coqwp/check.sh, which for each *_hardened.v asserts: no Admitted/admit,
+# it compiles, and Print Assumptions on every lemma is "Closed under the global
+# context" or depends only on that file's allowed standard axioms.
+
+on:
+  push:
+    paths:
+      - 'coqwp/**'
+      - '.github/workflows/coqwp.yml'
+  pull_request:
+    paths:
+      - 'coqwp/**'
+      - '.github/workflows/coqwp.yml'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "4.14"
+
+      # Coq MUST be installed before Why3: the Why3 opam package builds its Coq
+      # realizations (lib/why3/coq/BuiltIn.vo, ...) only when Coq is already
+      # present in the switch. check.sh maps that dir to the `Why3` logical name
+      # via `-R "$(why3 --print-libdir)/coq" Why3`.
+      - name: Install Coq 8.20.1
+        run: opam install -y coq.8.20.1
+
+      - name: Install Why3 1.8.2 (with Coq realizations)
+        run: |
+          opam install -y why3.1.8.2
+          # fail fast if the Coq realizations were not built
+          test -f "$(opam exec -- why3 --print-libdir)/coq/BuiltIn.vo" \
+            || { echo "::error::Why3 Coq realizations missing (BuiltIn.vo); Coq must precede Why3"; exit 1; }
+
+      - name: Versions
+        run: opam exec -- sh -c 'coqc --version | head -1; why3 --version'
+
+      - name: Run coqwp hardening gate
+        run: opam exec -- bash coqwp/check.sh
