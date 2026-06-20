@@ -98,8 +98,21 @@ Monitoring framework: the verification suite (`./tests/run.sh`, 32/32) is the re
 any change to the handlers, the audit/RBAC logic, or the Frama-C libc contracts. Operational cycle (~1 yr)
 re-checks residuals against new attack methods; strategic cycle (~3 yr) revisits W1–W4.
 
-**DONE = risk-owner sign-off.** This W5 is MACHINE-fed (verdicts) but the residual-risk acceptance is the
-human terminus — not asserted here.
+### Risk-owner sign-off (the human terminus — DONE)
+
+The risk owner has reviewed the verdict-derived W5 above and **approves** it:
+- the **proposed post-treatment likelihoods** (R1–R9) are **accepted** as the re-rated risk levels;
+- the **residual risks** are **accepted** as stated — FE11 token strength/expiry clock (trusted
+  boundary, remediated in a production build by an opaque expiring revocable credential), FE6/FE8
+  confidentiality verified on the core model (plane-limited), FE7 real-`get_query_param` termination
+  pending the upstream `strtok` `ensures`, and the FE3 in-transfer amount/funds logic (code-enforced).
+
+- **Risk owner:** Fabrice Derepas — **Decision:** APPROVED — **Date:** 2026-06-20.
+
+With this sign-off the study moves **MACHINE-DONE → DONE**: the verification is machine-closed (suite
+32/32, `ebios-lint` green) and the residual risk is now formally accepted by the risk owner. Re-rating on
+the operational/strategic cycles, or any new verdict, reopens W5 under the same propose-then-adjudicate
+discipline.
 
 ---
 
@@ -118,9 +131,9 @@ circular input.
 
 - **MACHINE-DONE (Gate B):** `./ebios-lint.sh macsl/tests/small_example/ebios-report.txt` — structure +
   coverage + endogeneity tripwire green. (Run it to reproduce.)
-- **DEPENDENCY: human reviewer (Gate C realism + terminus).** Content realism/completeness has no machine
-  oracle. The disjoint reviewer's critique was applied, but final **realism sign-off and risk-owner
-  acceptance of residual risk are a human terminus** — they are *not* faked here. The study is
-  MACHINE-DONE; it is **DONE only when the risk owner signs**.
+- **DEPENDENCY: human reviewer (Gate C realism + terminus) — SATISFIED.** Content realism/completeness
+  has no machine oracle. The disjoint reviewer's critique was applied, and the **risk owner has signed**
+  the residual-risk acceptance (W5 sign-off: Fabrice Derepas, APPROVED, 2026-06-20). The study is now
+  **DONE** (MACHINE-DONE = suite 32/32 + `ebios-lint` green; DONE = the sign-off above).
 - **Scales:** severity G1–G4, likelihood V1–V4, per ANSSI's EBIOS RM (4/4/3). Method attributed to ANSSI
   / Club EBIOS.

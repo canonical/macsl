@@ -99,6 +99,7 @@ join table.
 
 **Coverage check (procedure step 6):** every high-severity (G3/G4) feared event maps to ≥1 scenario row
 above — FE1–FE5, FE7–FE11 all present; no gap. **Farmer diagram:** with the proposed likelihoods every
-high-severity scenario moves off the top-right band, but the plot is labelled *proposed — pending
-risk-owner sign-off*. **DONE = the risk owner signs** the residuals (FE11 strength/expiry; FE6/FE8 on the
-real layer; FE7 strtok upstreaming) — the human terminus; MACHINE-DONE is the verdict log above.
+high-severity scenario moves off the top-right band. **SIGNED OFF** — the risk owner (Fabrice Derepas)
+approved the re-rated likelihoods and accepted the residuals (FE11 strength/expiry; FE6/FE8 on the real
+layer; FE7 strtok upstreaming) on 2026-06-20 (W5 sign-off in `ebios-report.txt`). Study **DONE**:
+MACHINE-DONE = the verdict log above + suite 32/32; DONE = that sign-off.
