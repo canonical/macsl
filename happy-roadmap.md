@@ -33,8 +33,8 @@ A shipped HAPPY (Phase 0: `\context(\writing)` + `\separated(\written, R)` + `\f
 ACSL annotation that a **meta-pass** expands **before WP runs**: at every write site touching the
 protected region in a non-exempt function, the pass injects a per-site `/*@ assert <name>: meta: … */`
 (via `Annotations.add_code_annot` under the `macsl` `Emitter`), instrumenting the current project's AST
-**in place** — no project copy (this is the exact defect that made MetAcsl a no-op; see `macsl-impl.md`
-§1–2). WP's weakest-precondition calculus (Why3 backend) turns each injected assert into a verification
+**in place** — no project copy (this is what removes MetAcsl's `-then-last`/file-position footgun; see
+`docs/design.md` §1–2). WP's weakest-precondition calculus (Why3 backend) turns each injected assert into a verification
 condition; Alt-Ergo (then Z3) discharges it, escalating to **interactive Coq** on the `framac-coq8`
 switch for goals SMT cannot close, reporting *Valid* when the goal's negation is unsatisfiable. A
 trusted boundary — a **declaration-only function** (`GFunDecl`: contract, no body, **no VC of its

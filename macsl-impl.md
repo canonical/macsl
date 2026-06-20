@@ -1,9 +1,17 @@
 # `macsl` — implementation plan (Phase 0)
 
+> **⚠ CORRECTED 2026-06-20 (milestone M0) — read `docs/design.md` §1 for the truth.**
+> This plan was written believing MetAcsl was a *silent no-op* on 32.1. **It is not** — that was an
+> invocation-order mistake (file after `-then-last`; `-print` without `-then-last`). MetAcsl works:
+> `frama-c monotony.c -meta -then-last -wp` ⇒ `7/8`, the violating write red. So macsl's purpose is the
+> **footgun-free in-place CLI** (+ the HAPPY rename + STRIDE), not "fix a no-op". Sections below that
+> say "no-op" are superseded by `docs/design.md`; the in-place architecture they describe is still the
+> implemented one (via `Ast.apply_after_computed`, not `Boot.Main.extend`).
+
 Implements the spec `macsl.md` (kept in the parent `use-frama-c` working tree). This document lives in
-the **`macsl/` git repo** (a fresh, empty repo) and describes how to build the Phase-0 plugin: the
-confirmed root cause of the MetAcsl no-op, the architecture that sidesteps it, the module layout with
-grounded code skeletons, the build, and the milestone/test plan.
+the **`macsl/` git repo** and describes how to build the Phase-0 plugin: the MetAcsl invocation footgun
+macsl removes, the in-place architecture, the module layout with grounded code skeletons, the build,
+and the milestone/test plan.
 
 **Platform:** Frama-C **32.1 (Germanium)**, OCaml 5.x. **Grounding:** read directly from the MetAcsl
 0.10 source (`$OPAM/framac-coq8/.opam-switch/sources/frama-c-metacsl.0.10/`) and the 32.1 kernel odoc
@@ -12,22 +20,27 @@ against that tree on 2026-06-20; re-confirm if the switch moves.
 
 ---
 
-## 0. The non-negotiable acceptance test
+## 0. The acceptance test (as implemented)
 
-`macsl` is "done" for Phase 0 when MetAcsl's own `tests/meta-wp/monotony.c` — a `\writing`
-monotonicity property violated by an `a = 41;` write — behaves correctly:
+> Originally stated as "make MetAcsl's `monotony.c` go red" — but M0 showed MetAcsl already does that.
+> The real Phase-0 acceptance test is a **write-confinement** property checked **in one stage, no
+> `-then-last`** (the footgun-free CLI):
 
 ```sh
-frama-c -macsl -print  monotony.c     # MUST show /*@ assert …: meta: … */ at the a=41 write
-frama-c -macsl -wp     monotony.c     # MUST report that assertion Unknown/Invalid (violation caught)
+frama-c file.c -macsl -print   # MUST show /*@ assert <name>: meta: \separated(...) */ at each write
+frama-c file.c -macsl -wp      # a function writing the protected region -> that assert UNPROVED
 ```
 
-Today, with MetAcsl, the same file vacuously proves 4/4 and `-print` shows only the raw annotation.
-Flipping that to a red obligation is the whole point.
+Achieved: `tests/phase0/writing_neg.c` ⇒ `Proved goals 4/5` (the `secret = 42` write red),
+`writing_pos.c` ⇒ `4/4`. See `docs/design.md` and `tests/run.sh` (6/6).
 
 ---
 
-## 1. Root cause of the MetAcsl no-op (CONFIRMED from source)
+## 1. The MetAcsl invocation footgun macsl removes (was mis-filed as a "no-op")
+
+> **M0 correction:** MetAcsl is *not* a no-op (see `docs/design.md` §1). The code below is real, but it
+> is *why you must use `-then-last`*, not a fatal defect. macsl sidesteps the whole class by
+> instrumenting in place.
 
 `meta_run.ml`:
 
@@ -310,9 +323,9 @@ let run () =
 
 let () = Boot.Main.extend run
 ```
-`File.pretty_ast ()` (or `Printer.pp_file`) prints the **current**, now-instrumented AST — the
-property the no-op violated. The `Successful translation` line is only emitted *after* real emission,
-and a zero-expansion policy aborts under the default warn status.
+`File.pretty_ast ()` (or `Printer.pp_file`) prints the **current**, now-instrumented AST, so the
+generated asserts are visible. The `Successful translation` line is only emitted *after* real emission,
+and a zero-expansion policy warns (or aborts) under the warn status.
 
 ---
 
@@ -335,7 +348,7 @@ forbidden call is constrained, and every other site must still discharge the pre
 
 | Mechanism | Where | Catches |
 |---|---|---|
-| `-macsl-print` shows generated `assert` | `macsl_run` `File.pretty_ast` | "translation emitted nothing" (the MetAcsl no-op) |
+| `-macsl-print` shows generated `assert` | `macsl_run` `File.pretty_ast` | a policy that emitted nothing (instrumentation must be visible) |
 | zero-expansion **warning→abort** | `macsl_run` per group | a policy whose `\targets` match nothing |
 | `-macsl-list-targets` (count + sites) | `macsl_dispatch` | silent under-expansion |
 | `-macsl-number-assertions` | `mk_assert` naming | identifying *which* obligation is the red one |
@@ -368,7 +381,7 @@ the ptests `-update` target. Each `run.config` header sets `OPT: -macsl -macsl-n
 
 | M | Goal | Done when |
 |---|---|---|
-| **M0** | Reproduce + pin the exact no-op mechanism | `monotony.c` under MetAcsl bisected; one-line note on why `-then-last` drops the copy on 32.1 |
+| **M0** | Run MetAcsl's own test before assuming it is broken | DONE: `monotony.c` works with `-then-last` (7/8) — the "no-op" was invocation order, not a bug (see `docs/design.md` §1) |
 | **M1** | Plugin skeleton loads | `macsl_options` + `macsl.ml`; `frama-c -macsl` runs, prints "Will process 0 policies" |
 | **M2** | Parse a policy | `macsl_parse` registers `happy`/`meta`; a `\writing` policy parses into `Gathered`; `-macsl-list-targets` shows its target set |
 | **M3** | Emit in place (the fix) | `\writing` `\separated(\written,R)` produces an `assert` at each write; `-macsl-print` shows it; **`monotony.c` `-macsl -wp` goes RED** ← acceptance test |
