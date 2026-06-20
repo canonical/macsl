@@ -53,12 +53,26 @@ check "zero-expansion-warns" 'zero-expansion. Warning' \
   frama-c "${BASE[@]}" -macsl tests/phase0/zero_targets.c
 
 # 5. list-targets reports the expansion count.
-check "list-targets" 'policy iso: 3 assertion' \
+check "list-targets" 'policy iso .writing.: 3 assertion' \
   frama-c "${BASE[@]}" -macsl -macsl-list-targets tests/phase0/writing_neg.c
 
 # 6. -macsl-set selects a subset (here: a name that does not exist -> 0 policies).
 check "policy-select" 'Will process 0 policies' \
   frama-c "${BASE[@]}" -macsl -macsl-set nosuch tests/phase0/writing_neg.c
+
+echo "== Phase-1 cases (H-I1 read confinement) =="
+
+# 7. Reading instrumentation lands at read sites, not the write target.
+check "read/print" 'noread: meta: .separated.&secret, &secret' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase1/reading_neg.c
+
+# 8. Negative control: the secret-READING site does NOT prove.
+check "read/neg-catches" 'Proved goals: +3 / 4' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase1/reading_neg.c
+
+# 9. Positive control: nothing reads secret -> everything proves.
+check "read/pos-allgreen" 'Proved goals: +4 / 4' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase1/reading_pos.c
 
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

@@ -51,23 +51,34 @@ A HAPPY policy is a global ACSL annotation introduced by the `happy` keyword:
 /*@ happy \prop,
       \name(<string>),          // names the generated assertions
       \targets(<TS>),           // \ALL  |  {f, g, ...}
-      \context(\writing),       // Phase 0: the writing context only
-      P ;                       // an ACSL predicate; may mention \written
+      \context(<C>),            // \writing (H-T) | \reading (H-I1)
+      P ;                       // an ACSL predicate; may mention the context meta-variable
 */
 ```
 
-- **`\written`** — inside `P`, the meta-variable `\written` denotes the address of the lvalue written
-  at the current site (`&x` for `x = …;`). `\lhost_written` denotes the address of its base.
+- **`\context(\writing)`** (Phase 0, H-T) ranges over every **write** site; the meta-variable
+  **`\written`** denotes the address of the written lvalue (`&x` for `x = …;`), `\lhost_written` its
+  base.
+- **`\context(\reading)`** (Phase 1, H-I1) ranges over every **read** site (each lvalue read inside an
+  expression); the meta-variable **`\read`** denotes the address of the read lvalue, `\lhost_read` its
+  base.
 - **`\targets(\ALL)`** ranges over every defined function; **`\targets({f,g})`** over the named ones.
-- The predicate is re-typed at each write site with `\written` bound to that site's lvalue, then
+- The predicate is re-typed at each matching site with the meta-variable bound to that site, then
   emitted as `assert <name>: meta: P`.
 
-Typical `P` is a separation (write-confinement) predicate:
+Typical `P` is a separation predicate (confinement):
 
 ```c
-\separated(\written, &secret)          // no targeted function writes `secret`
-\separated(\written, buf + (0 .. n-1)) // none writes into a buffer region
+\separated(\written, &secret)          // write confinement: nothing WRITES `secret`
+\separated(\written, buf + (0 .. n-1)) //   none writes into a buffer region
+\separated(\read,    &secret)          // read confinement:  nothing READS `secret`  (H-I1)
 ```
+
+> **What read confinement is and is NOT.** `\separated(\read, R)` proves no non-exempt code path
+> *syntactically reads* region `R`. It is **not** noninterference — it says nothing about what an
+> exempt reader does with the secret downstream. That stronger, relational property is **H-I2**
+> (`../happy-roadmap.md`), which needs self-composition; conflating the two would be a
+> "coherent-and-wrong" claim.
 
 ## Options
 
@@ -92,10 +103,15 @@ violating site is genuinely caught. Before trusting a result:
 This is the Gate-C non-vacuity rule applied to policies; it is what caught the original MetAcsl
 misdiagnosis (see [design.md](design.md)).
 
-## Limitations (Phase 0)
+## Limitations (Phases 0–1)
 
-- Only `\context(\writing)`. `\reading`/`\calling`/invariants and the `\fguard`/`\tguard` guards are
-  on the roadmap (`../happy-roadmap.md`).
+- Contexts implemented: `\writing` (H-T) and `\reading` (H-I1). `\calling`/invariants and the
+  `\fguard`/`\tguard` guards are on the roadmap (`../happy-roadmap.md`).
+- **Read sites** = lvalues occurring inside expressions (rvalues, conditions, call args, return,
+  and offset indices). A read of `R` through the *index* of a write target — e.g. `a[secret_i] = 0` —
+  is covered (the index `i` is an expression); but address-taken reads (`&R`) are deliberately not
+  counted (taking an address does not read the value).
 - Temporal predicates over `\at(x, Before/After)` are not yet wired (no Before/After label
-  machinery); Phase 0 targets separation/write-confinement predicates over `\written`.
+  machinery); macsl targets separation/confinement predicates over `\written` / `\read`.
+- Read confinement is single-trace; true noninterference (H-I2) is future work.
 - See `glossary/glossary.md` for terms.

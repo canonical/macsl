@@ -56,9 +56,14 @@ source) — the same faithfulness discipline used elsewhere in this project.
    *closure* `kf -> substitution -> predicate` (delayed typing — the predicate is re-typed per site
    once `\written` is known). The meta-variables `\written`/`\read`/… are registered as logic
    **builtins** (idempotently — reused if MetAcsl already declared them) so `P` type-checks.
-2. **Walk** (`writing_visitor`). For each target function, a `frama_c_inplace` visitor matches write
-   sites — `Set (lv,…)`, `Call (Some lv,…)`, `Local_init (vi,…)` — and binds `\written` to the
-   address of the written lvalue (`Logic_utils.mk_logic_AddrOf`).
+2. **Walk** — a `frama_c_inplace` visitor per target function, chosen by `\context`:
+   - `\writing` (`writing_visitor`, H-T) matches write sites — `Set (lv,…)`, `Call (Some lv,…)`,
+     `Local_init (vi,…)` — and binds `\written` to the written lvalue's address.
+   - `\reading` (`reading_visitor`, H-I1) collects the lvalues *read* at each statement: an `in_exp`
+     flag means `vlval` counts only lvals occurring inside expressions (not the write-target lval),
+     `AddrOf`/`StartOf`/`SizeOf` are handled specially, results are deduped per statement
+     (`Term_lval.Set`) and emitted in a `DoChildrenPost`. Binds `\read` to each read lvalue's address.
+   Both bind via `Logic_utils.mk_logic_AddrOf`.
 3. **Emit** (`emit_at`). The closure is instantiated with that binding, trivially-true results are
    dropped, and the predicate is added as `AAssert ([], toplevel_predicate ~kind:Assert P)` under the
    `macsl` `Emitter`, named `<policy>: meta: …`.
@@ -86,7 +91,7 @@ Single module, `src/macsl.ml`:
 | builtins | idempotent `Logic_builtin.register` of the keywords |
 | custom typer | `meta_type_predicate`/`meta_type_term` — substitute the meta-variables; `delay_prop` |
 | parser | `process_property`/`process_meta`; `register_parsing` (the `happy` extension) |
-| instrumentation | `writing_visitor`, `emit_at`, `kfs_of_target`, `run_policy` |
+| instrumentation | shared `instantiate`; `writing_visitor` (H-T) and `reading_visitor` (H-I1); `kfs_of_target`, `run_policy` (dispatches on `\context`) |
 | entry | `Ast.apply_after_computed run` |
 
 ## 6. Deviations from `macsl-impl.md`

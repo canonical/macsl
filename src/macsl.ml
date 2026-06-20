@@ -54,7 +54,7 @@ let () = Self.set_warn_status zero_wkey Log.Wactive
 (* HAPPY policy representation                                          *)
 (* ------------------------------------------------------------------ *)
 
-type context = Writing
+type context = Writing | Reading
 
 type target = TgAll | TgSet of string list
 
@@ -189,8 +189,9 @@ let process_property tc loc = function
     let p_target = parse_targets tc etargets in
     let p_context = match econtext.lexpr_node with
       | PLvar "\\writing" -> Writing
+      | PLvar "\\reading" -> Reading
       | _ -> tc.error econtext.lexpr_loc
-               "Phase 0 supports only \\context(\\writing)"
+               "macsl supports \\context(\\writing) and \\context(\\reading)"
     in
     let eproperty = match tail with
       | [ x ] -> x
@@ -233,46 +234,116 @@ let addr_of_tlhost (h, _) = addr_of_tlval (h, TNoOffset)
 
 let counter = ref 0
 
+(* Build and add one assert for [pol] at [stmt], with the meta-variables bound
+   by [assoc].  Returns true iff a (non-trivial) assertion was emitted. *)
+let instantiate pol kf stmt assoc =
+  let pred = pol.p_property kf assoc in
+  if Logic_utils.is_trivially_true pred then false
+  else begin
+    let label =
+      if Number_assertions.get ()
+      then (incr counter; Printf.sprintf "%s_%d" pol.p_name !counter)
+      else pol.p_name
+    in
+    let named = { pred with pred_name = label :: "meta" :: pred.pred_name } in
+    let annot =
+      Logic_const.(new_code_annotation
+                     (AAssert ([], toplevel_predicate ~kind:Assert named)))
+    in
+    Annotations.add_code_annot emitter ~kf stmt annot;
+    true
+  end
+
+let writing_assoc tlval =
+  [ "\\written",       RepVariable (addr_of_tlval tlval);
+    "\\lhost_written", RepVariable (addr_of_tlhost tlval) ]
+
+let reading_assoc tlval =
+  [ "\\read",       RepVariable (addr_of_tlval tlval);
+    "\\lhost_read", RepVariable (addr_of_tlhost tlval) ]
+
+(* ---- H-T: writing context (Phase 0) -------------------------------- *)
 class writing_visitor pol = object (self)
   inherit Visitor.frama_c_inplace
-
   val mutable count = 0
   method get_count = count
 
-  method private emit_at stmt tlval =
+  method private emit stmt tlval =
     let kf = Option.get self#current_kf in
-    let assoc =
-      [ "\\written",        RepVariable (addr_of_tlval tlval);
-        "\\lhost_written",  RepVariable (addr_of_tlhost tlval) ]
-    in
-    let pred = pol.p_property kf assoc in
-    if not (Logic_utils.is_trivially_true pred) then begin
-      let label =
-        if Number_assertions.get ()
-        then (incr counter; Printf.sprintf "%s_%d" pol.p_name !counter)
-        else pol.p_name
-      in
-      let named = { pred with pred_name = label :: "meta" :: pred.pred_name } in
-      let annot =
-        Logic_const.(new_code_annotation
-                       (AAssert ([], toplevel_predicate ~kind:Assert named)))
-      in
-      Annotations.add_code_annot emitter ~kf stmt annot;
-      count <- count + 1
-    end
+    if instantiate pol kf stmt (writing_assoc tlval) then count <- count + 1
 
   method! vstmt_aux stmt =
-    if not stmt.ghost then begin
+    if not stmt.ghost then
       (match stmt.skind with
        | Instr (Set (lval, _, _)) ->
-         self#emit_at stmt (Logic_utils.lval_to_term_lval lval)
+         self#emit stmt (Logic_utils.lval_to_term_lval lval)
        | Instr (Call (Some lval, _, _, _)) ->
-         self#emit_at stmt (Logic_utils.lval_to_term_lval lval)
+         self#emit stmt (Logic_utils.lval_to_term_lval lval)
        | Instr (Local_init (vi, _, _)) ->
-         self#emit_at stmt (Logic_utils.lval_to_term_lval (Cil.var vi))
-       | _ -> ())
-    end;
+         self#emit stmt (Logic_utils.lval_to_term_lval (Cil.var vi))
+       | _ -> ());
     Cil.DoChildren
+end
+
+(* ---- H-I1: reading context (Phase 1) ------------------------------- *)
+(* The mirror of the writing pass: collect the lvalues *read* at each statement
+   (i.e. lvals occurring inside expressions, not the write-target lval), then
+   emit one separation assert per read.  Technique (after MetAcsl): an [in_exp]
+   flag so vlval only counts reads; AddrOf/SizeOf handled; deduped per stmt. *)
+module TLvalSet = Cil_datatype.Term_lval.Set
+module StmtHashtbl = Cil_datatype.Stmt.Hashtbl
+
+class reading_visitor pol = object (self)
+  inherit Visitor.frama_c_inplace
+  val mutable count = 0
+  method get_count = count
+
+  val lvals_by_stmt = StmtHashtbl.create 20
+  val mutable in_exp = false
+
+  method private emit stmt tlval =
+    let kf = Option.get self#current_kf in
+    if instantiate pol kf stmt (reading_assoc tlval) then count <- count + 1
+
+  method! vexpr e =
+    in_exp <- true;
+    (match e.enode with
+     | SizeOfE _ | AlignOfE _ ->
+       (* the value is not evaluated, only its type *)
+       in_exp <- false; Cil.SkipChildren
+     | AddrOf (_, o) | StartOf (_, o) ->
+       (* the toplevel lval is not read; its offset indices are *)
+       ignore (Visitor.visitFramacOffset (self :> Visitor.frama_c_visitor) o);
+       in_exp <- false; Cil.SkipChildren
+     | _ -> Cil.DoChildrenPost (fun e -> in_exp <- false; e))
+
+  method! vlval lval =
+    let typ = Cil.typeOfLval lval in
+    if in_exp && not (Ast_types.is_fun typ) then
+      (match self#current_stmt with
+       | Some stmt ->
+         (match stmt.skind with
+          | UnspecifiedSequence _ -> ()    (* ignore the US bookkeeping lvals *)
+          | _ ->
+            let tl = Logic_utils.lval_to_term_lval lval in
+            let old =
+              match StmtHashtbl.find_opt lvals_by_stmt stmt with
+              | Some s -> s | None -> TLvalSet.empty
+            in
+            StmtHashtbl.replace lvals_by_stmt stmt (TLvalSet.add tl old))
+       | None -> ());
+    Cil.DoChildren
+
+  method! vstmt_aux stmt =
+    if not stmt.ghost then
+      let after s =
+        (match StmtHashtbl.find_opt lvals_by_stmt s with
+         | Some set -> TLvalSet.iter (self#emit s) set
+         | None -> ());
+        s
+      in
+      Cil.DoChildrenPost after
+    else Cil.DoChildren
 end
 
 let kfs_of_target = function
@@ -292,23 +363,32 @@ let kfs_of_target = function
            Self.warning "unknown target function %s; skipped" n; None)
       names
 
-let run_policy pol =
-  let kfs = kfs_of_target pol.p_target in
-  let vis = new writing_visitor pol in
+let visit_all (vis : Visitor.frama_c_visitor) kfs =
   List.iter
     (fun kf ->
-       ignore
-         (Visitor.visitFramacFunction
-            (vis :> Visitor.frama_c_visitor)
-            (Kernel_function.get_definition kf)))
-    kfs;
-  let n = vis#get_count in
+       ignore (Visitor.visitFramacFunction vis (Kernel_function.get_definition kf)))
+    kfs
+
+let run_policy pol =
+  let kfs = kfs_of_target pol.p_target in
+  let n =
+    match pol.p_context with
+    | Writing ->
+      let v = new writing_visitor pol in
+      visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
+    | Reading ->
+      let v = new reading_visitor pol in
+      visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
+  in
+  let site, ctx = match pol.p_context with
+    | Writing -> "write", "writing"
+    | Reading -> "read",  "reading" in
   if n = 0 then
     Self.warning ~wkey:zero_wkey
-      "policy %s expanded to 0 assertions (matched no write site)" pol.p_name;
+      "policy %s expanded to 0 assertions (matched no %s site)" pol.p_name site;
   if List_targets.get () then
-    Self.result "policy %s: %d assertion(s) over %d target function(s)"
-      pol.p_name n (List.length kfs);
+    Self.result "policy %s [%s]: %d assertion(s) over %d target function(s)"
+      pol.p_name ctx n (List.length kfs);
   n
 
 let run (_file : Cil_types.file) =

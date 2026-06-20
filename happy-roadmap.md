@@ -53,8 +53,8 @@ milestone that needs genuinely new WP plumbing. The codes `H-T`, `H-I1`, `H-R`, 
 
 | Code | STRIDE letter | Property family | New machinery required | `macsl` phase (§7) |
 |------|---------------|-----------------|------------------------|--------------------|
-| H-T  | Tampering | write confinement | none — shipped (Phase 0) | 0 |
-| H-I1 | Information disclosure (first half) | read confinement | none — symmetric `\reading` pass | 0–1 |
+| H-T  | Tampering | write confinement | none — **shipped (Phase 0)** | 0 |
+| H-I1 | Information disclosure (first half) | read confinement | none — symmetric `\reading` pass — **shipped (Phase 1)** | 0–1 |
 | H-R  | Repudiation | audit-log completeness | ghost-log injection | 1 |
 | H-D  | Denial of service | totality + bounded work | RTE bundle + ghost fuel counter | 1–2 |
 | H-E  | Elevation of privilege | privilege monotonicity | ghost lattice over a protected field | 1–2 |
@@ -96,10 +96,10 @@ offset fails at its own site, with the HAPPY and the site named in the WP diagno
 
 ---
 
-## 2. H-I1 — Read confinement (`\reading` + `\separated(\read, R)`)
+## 2. H-I1 — Read confinement (`\reading` + `\separated(\read, R)`) — **IMPLEMENTED (Phase 1)**
 
-The cheapest extension, because it is the mirror of H-T and the `\reading` context is already in the
-Phase-0 plan (`macsl-impl.md` M4). Proposed surface:
+The cheapest extension, because it is the mirror of H-T. **Shipped** in `src/macsl.ml`
+(`reading_visitor`) and tested (`tests/phase1/reading_{pos,neg}.c`, `3/4` vs `4/4`). Surface:
 ```c
 /*@ happy key_confidentiality:
       \targets(\ALL),

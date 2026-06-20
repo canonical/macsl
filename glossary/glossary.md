@@ -17,14 +17,28 @@ compatible). Not "broken" — see [design.md](../docs/design.md) §1.
 A global, module-level declaration that ranges over many program points, as opposed to a per-function
 contract. In macsl, written with the `happy` ACSL extension keyword. (MetAcsl uses `meta`.)
 
-### context (`\writing`)
-The class of program points a policy ranges over. Phase 0 supports `\writing` — every memory **write**
-in the target functions. (Roadmap: `\reading`, `\calling`, invariants.)
+### context (`\writing`, `\reading`)
+The class of program points a policy ranges over. Implemented: `\writing` — every memory **write** in
+the target functions (H-T); `\reading` — every memory **read** (H-I1). (Roadmap: `\calling`,
+invariants.)
 
-### meta-variable (`\written`, `\lhost_written`)
+### meta-variable (`\written`, `\read`, …)
 A placeholder in the policy predicate that is bound to the concrete site at instrumentation time. In
 the `\writing` context, `\written` is the **address of the written lvalue** (`&x` for `x = …;`) and
-`\lhost_written` the address of its base. `\read`/`\called` are reserved for future contexts.
+`\lhost_written` the address of its base. In the `\reading` context, `\read` is the **address of the
+read lvalue** and `\lhost_read` its base. `\called` is reserved for the future `\calling` context.
+
+### read site
+An occurrence of an lvalue in a **read** position: any lvalue inside an expression — a right-hand side,
+a condition, a call argument or callee, a return value, or an offset index. *Not* a write-target lval
+(that is a write site) and *not* an address-taken lval (`&x` does not read `x`'s value). macsl emits
+one read-separation assert per distinct read lvalue per statement.
+
+### read confinement (H-I1)
+The Phase-1 property: "no targeted function **reads** region *R*", expressed as
+`\separated(\read, R)`. The mirror of write confinement. STRIDE **Information disclosure** (partial) —
+code **H-I1**. **Not** noninterference: it proves the secret is not *read* outside the enclave, not
+that exempt readers' outputs are independent of it (that is **H-I2**, relational/self-composition).
 
 ### target (`\targets`)
 The functions a policy applies to: `\targets(\ALL)` (every defined function) or `\targets({f, g})`.
@@ -81,11 +95,13 @@ The policy predicate is stored untyped and re-type-checked at **each** write sit
 meta-variable bound to that site (`p_property : kf -> substitution -> predicate`). This is how one
 written policy yields a correctly-typed assert at every site.
 
-### Phase 0 / milestone M0
-Phase 0 = the `\writing` write-confinement checker (this repo, working, tested). M0 = "run MetAcsl's
-own test", the step that corrected the no-op misdiagnosis before any code was written.
+### Phase 0 / Phase 1 / milestone M0
+Phase 0 = the `\writing` write-confinement checker (H-T); Phase 1 = the `\reading` read-confinement
+checker (H-I1) — both in this repo, working and tested. M0 = "run MetAcsl's own test", the step that
+corrected the no-op misdiagnosis before any code was written.
 
 ### STRIDE (H-T … H-I2)
 The threat taxonomy (Spoofing, Tampering, Repudiation, Information disclosure, Denial of service,
 Elevation of privilege). HAPPY's roadmap maps one property family to each; the codes `H-T … H-I2` are
-defined in `../happy-roadmap.md`. Phase 0 implements **H-T** (Tampering / write confinement).
+defined in `../happy-roadmap.md`. Implemented so far: **H-T** (Tampering / write confinement) and
+**H-I1** (Information disclosure, first half / read confinement).

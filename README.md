@@ -16,9 +16,10 @@ why that matters). Licence: LGPL-2.1 (inherited from MetAcsl).
 
 ## Status
 
-Phase 0 (the `\writing` context). Builds and is verified against **Frama-C 32.1 (Germanium)**.
-`./tests/run.sh` is green (6/6). The roadmap to full STRIDE coverage is in
-[`happy-roadmap.md`](happy-roadmap.md); the design rationale is [`macsl-impl.md`](macsl-impl.md).
+Phases 0–1: `\context(\writing)` (**H-T**, write confinement) and `\context(\reading)` (**H-I1**, read
+confinement). Builds and is verified against **Frama-C 32.1 (Germanium)**; `./tests/run.sh` is green
+(9/9). The roadmap to full STRIDE coverage is in [`happy-roadmap.md`](happy-roadmap.md); the design
+rationale is [`macsl-impl.md`](macsl-impl.md).
 
 > **Honest note.** macsl was first conceived to *fix* MetAcsl, believed to be a silent no-op on
 > 32.1. Running MetAcsl's own test (milestone M0) showed that was an **invocation-order mistake**, not
@@ -45,14 +46,15 @@ frama-c -no-autoload-plugins -load-plugin wp \
 ```c
 int secret = 0, pub = 0;
 
-/*@ happy \prop,
-      \name("iso"),
-      \targets(\ALL),
-      \context(\writing),
-      \separated(\written, &secret);   // no targeted function may write `secret`
+/*@ happy \prop, \name("iso"), \targets(\ALL),
+      \context(\writing), \separated(\written, &secret);   // nothing WRITES `secret`  (H-T)
+*/
+/*@ happy \prop, \name("conf"), \targets(\ALL),
+      \context(\reading), \separated(\read, &secret);      // nothing READS `secret`   (H-I1)
 */
 
-void f(void) { pub = 1; secret = 2; }  // the `secret = 2` assert is RED
+void f(void) { pub = secret; secret = 2; }
+// `pub = secret` -> the read assert is RED ; `secret = 2` -> the write assert is RED
 ```
 
 See [docs/usage.md](docs/usage.md) for the full surface and options, and
