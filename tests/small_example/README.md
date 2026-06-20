@@ -1,18 +1,19 @@
 # small_example — the flagship HAPPY/STRIDE target
 
 A banking-style backend (authenticate / transfer / audit over a tiny HTTP layer) and the **HAPPY**
-policies that secure it. This is the **flagship example** for `macsl`: it shows the same security
-policies (1) attached to **realistic** libc-using code, (2) **proved** on a crisp compliant core, and
-(3) **caught going red** on deliberate violations. Those three jobs are split across three `.c` files
-on purpose — each is load-bearing; none is redundant.
+policies that secure it. This is the **flagship example** for `macsl`: it shows security policies
+(1) attached to **realistic** libc-using code, (2) **proved** on a crisp compliant core, and
+(3) **caught going red** on deliberate violations — across **all six HAPPY/STRIDE families**
+(H-T, H-R, H-S, H-E, H-I1, H-I2). Those three jobs are split across three `.c` files on purpose —
+each is load-bearing; none is redundant.
 
 ## The three files and their roles
 
 | File | Role | What it is | `macsl -wp` result |
 |---|---|---|---|
 | **`main.c`** | **Realistic integration** | A full HTTP server (three routes) using real libc — `strtok`/`strcmp`/`strncpy`, `read`/`write`, `socket`/`accept`, variadic `snprintf`/`sscanf` — carrying the audit log + `log_transfer`. **Five policies are instrumented here on the real code** — the four banking ones (H-R `nonrepud_complete`, H-R `nonrepud_append_only`, H-T `bal_integrity`, H-S `authn`) plus **H-E `priv_monotonic`**. | `nonrepud_complete` **1/1** on `transfer`; `nonrepud_append_only` **proves with `-wp-prover z3 -wp-split`** (full `AuditRecord` equality — a struct, not a scalar); `bal_integrity` **50/50** across the non-exempt functions; `authn` **1/1** (call-site check in `handle_client`); `priv_monotonic` **1/1** on `transfer`. The *whole file* isn't all-green (the routes need loop invariants + libc specs) — which is exactly why `banking.c` exists. |
-| **`banking.c`** | **Compliant core (the positive proof)** | A focused, fully-contracted distillation of `main.c`'s security-relevant core (accounts, audit log, `authenticate`, `log_transfer`, `transfer`) carrying **all four banking policies**. The unambiguous "every policy holds" artifact. | **18/18** — all green. |
-| **`banking_attacks.c`** | **Negative controls (the teeth)** | **Five attacks**, **one per policy**, each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **28/33** — exactly **five** goals red, one per attack. |
+| **`banking.c`** | **Compliant core (the positive proof)** | A focused, fully-contracted distillation of `main.c`'s security-relevant core (accounts, audit log, `authenticate`, `log_transfer`, `transfer`, plus a confidential `pin` and a `check` verifier) carrying **six policies across five families** (H-R ×2, H-S, H-T, H-I1, H-I2). The unambiguous "every policy holds" artifact. | **43/43** — all green. |
+| **`banking_attacks.c`** | **Negative controls (the teeth)** | **Seven attacks**, **one per policy**, each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **34/41** — exactly **seven** goals red, one per attack. |
 
 **Why three, not one.** `main.c` answers *"do the policies attach to real-world code?"* (yes — the
 libc layer is **not** "out of WP's reach"). `banking.c` answers *"do the policies hold?"* on a core
@@ -33,10 +34,11 @@ attack `escalate` still sits with the other negative controls.)
 | `bal_integrity` | **H-T** | `\writing` (`\diff(\ALL,{transfer})`) | only `transfer` may write a balance | `banking.c` + `main.c` (50/50; `\diff` also exempts `main`, the trusted seed) | `tamper` |
 | `authn` | **H-S** | `\precond` | `transfer` only on an authenticated session | `banking.c` + `main.c` (call-site check in `handle_client`) | `unauth_endpoint` |
 | `priv_monotonic` | **H-E** | `\postcond` | a transfer never raises anyone's privilege | `main.c` `transfer` (1/1) | `escalate` |
+| `pin_confidential` | **H-I1** | `\reading` | no code reads a confidential PIN | `banking.c` (`\separated(\read, pin)`) | `leak_pin` |
+| `noleak` | **H-I2** | `\noninterference` | `check`'s public result is independent of the secret | `banking.c` (self-composition) | `check` (leak) |
 
-These five cover **four** of the six HAPPY families (**H-T, H-R, H-S, H-E**). The remaining two —
-**H-I1** (read confinement) and **H-I2** (noninterference) — are specified in `../../happy-roadmap.md`,
-not in this directory.
+These seven policies cover **all six** HAPPY families (**H-T, H-R, H-S, H-E, H-I1, H-I2**) — full family
+coverage. No family is left to `happy-roadmap.md` only.
 
 **On `priv_monotonic` (H-E).** Roles are `0`=super-admin … `2`=user, so a *smaller* number is *more*
 privilege and "no escalation" is the monotonicity law `role >= \old(role)`. It is scoped to `transfer`
@@ -44,6 +46,16 @@ privilege and "no escalation" is the monotonicity law `role >= \old(role)`. It i
 `\diff(\ALL,{main})` is SMT-incomplete on `main.c`'s libc-heavy routes (the trivial role-preservation
 goal drowns in `strtok`/`strcmp` context — timeout, not a refutation). Its compliant proof lives on
 `main.c` (banking.c carries no role field); the confused-deputy attack `escalate` is its negative control.
+
+**On `pin_confidential` (H-I1) and `noleak` (H-I2) — why on `banking.c`, not `main.c`.** These two
+confidentiality families need shapes `main.c`'s realistic code does not provide cleanly: H-I1's
+`\separated(\read, secret)` is provable only when the read locations are *named* and distinct from the
+secret — `main.c`'s string routines read arbitrary `char*` parameters whose separation from the
+secret bytes is unknown without extra preconditions (and char-vs-char defeats the chunk-typing that
+made `bal_integrity` free). H-I2's self-composition needs a function with a **secret parameter** and a
+**functional `ensures`**; `main.c`'s `authenticate` deliberately makes its result *depend* on the
+secret (token-based), so it is not noninterference-clean. Both are therefore demonstrated on the
+synthetic core, mirroring the verified `tests/phase1` / `tests/phase5` controls.
 
 **How `authn` got onto `main.c`.** H-S is an *external* check-before-use capability keyed on a session
 **global** (banking.c's `session_ok`). `main.c` originally folded authentication **into** `transfer`
@@ -61,7 +73,7 @@ Two notes on the `main.c` instrumentation, both honest costs of *realistic* data
 - `bal_integrity` exempts `main` alongside `transfer` because `main()` seeds the DB balances at
   startup (the trusted bootstrap); banking.c had no bootstrap, so the question didn't arise.
 
-## The five attacks (caught in `banking_attacks.c`)
+## The seven attacks (caught in `banking_attacks.c`)
 
 | Attack | Violates | Caught as |
 |---|---|---|
@@ -70,6 +82,8 @@ Two notes on the `main.c` instrumentation, both honest costs of *realistic* data
 | `tamper` — writes a balance directly | `bal_integrity` (H-T) | `tamper…bal_integrity` red |
 | `unauth_endpoint` — calls `transfer` without auth | `authn` (H-S) | `unauth_endpoint_call_transfer_requires_authn` red |
 | `escalate` — confused deputy: lowers a role (grants super-admin) | `priv_monotonic` (H-E) | `escalate…priv_monotonic` red |
+| `leak_pin` — reads a confidential PIN into a public sink | `pin_confidential` (H-I1) | `leak_pin…pin_confidential` red |
+| `check` (leak) — result depends on the secret (`attempt + stored`) | `noleak` (H-I2) | `check_selfcomp…noleak` red |
 
 ## Run
 
@@ -92,11 +106,11 @@ frama-c -no-autoload-plugins -load-plugin wp -load-module $CMXS -macsl -wp \
 #  full-struct append-only added it is 51/52 at the default prover and 213/213 under
 #  `-wp-prover z3 -wp-split -wp-timeout 120`.)
 
-# --- banking.c : the compliant core, all four policies green ---
-$FC tests/small_example/banking.c                          # 18/18
+# --- banking.c : the compliant core, six policies (five families) all green ---
+$FC tests/small_example/banking.c                          # 43/43
 
-# --- banking_attacks.c : negative controls, exactly five goals red ---
-$FC tests/small_example/banking_attacks.c                  # 28/33
+# --- banking_attacks.c : negative controls, exactly seven goals red ---
+$FC tests/small_example/banking_attacks.c                  # 34/41
 ```
 
 (`banking.c` / `banking_attacks.c` are also cases 24–25 in `../run.sh`. The `main.c` proof-status

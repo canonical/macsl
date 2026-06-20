@@ -10,6 +10,8 @@ int audit[NLOG];
 int audit_len = 0;
 int session_ok = 0;
 int role[NACC];         /* privilege level: 0 = super-admin .. 2 = user (smaller = more) */
+int pin[NACC];          /* H-I1: confidential per-account PIN */
+int leak_sink = 0;      /* a public sink an attacker exfiltrates into */
 
 /*@ assigns session_ok; ensures \result != 0 ==> session_ok == 1; */
 int authenticate(int user, int pass);
@@ -92,4 +94,25 @@ void escalate(int i) { role[i] = 0; }    /* confused deputy: grant super-admin *
 /*@ happy \prop, \name("priv_monotonic"),
       \targets({escalate}), \context(\postcond),
       \forall integer k; 0 <= k < NACC ==> role[k] >= \old(role[k]);
+*/
+
+/* ATTACK 6 — H-I1 read confinement: a function that READS a confidential PIN
+   into a public sink (the classic exfiltration). The read-separation check at
+   `pin[i]` is unprovable -> red. */
+/*@ requires 0 <= i < NACC; assigns leak_sink; */
+void leak_pin(int i) { leak_sink = pin[i]; }   /* reads a secret -> read-check red */
+/*@ happy \prop, \name("pin_confidential"),
+      \targets({leak_pin}), \context(\reading),
+      \separated(\read, pin + (0 .. NACC - 1));
+*/
+
+/* ATTACK 7 — H-I2 noninterference: `check`'s public result DEPENDS on the secret
+   `stored` (returns attempt + stored). The synthesized self-composition's
+   relational assert (equal public input, distinct secret -> equal result) is
+   unprovable -> red. The verified form of the classic password-oracle leak. */
+/*@ assigns \nothing; ensures \result == attempt + stored; */
+int check(int attempt, int stored);
+/*@ happy \prop, \name("noleak"),
+      \targets({check}), \context(\noninterference),
+      \secret(stored);
 */

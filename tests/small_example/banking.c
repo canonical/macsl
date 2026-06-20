@@ -22,6 +22,13 @@ int audit[NLOG];        /* audit log records (schematic) */
 int audit_len = 0;      /* number of audit records written so far */
 int session_ok = 0;     /* capability: an authenticated session is established */
 int requests = 0;       /* a benign counter (non-protected state) */
+int pin[NACC];          /* H-I1: confidential per-account PIN -- no app code may read it */
+
+/* --- a login check whose PUBLIC result must not depend on the stored secret
+   (H-I2 noninterference). Declaration-only with a functional contract: its result
+   is a function of the public `attempt` alone. --- */
+/*@ assigns \nothing; ensures \result == attempt; */
+int check(int attempt, int stored);
 
 /* --- trusted authenticator: declaration-only; grants the session capability.
    The identity check itself is the trusted boundary (EBIOS GH1) — macsl proves
@@ -76,6 +83,19 @@ void transfer(int from, int to, int amount)
 /*@ happy \prop, \name("bal_integrity"),
       \targets(\diff(\ALL, {transfer})), \context(\writing),
       \separated(\written, balance + (0 .. NACC - 1));
+*/
+
+/* H-I1 read confinement: no application code reads the confidential PIN. */
+/*@ happy \prop, \name("pin_confidential"),
+      \targets(\ALL), \context(\reading),
+      \separated(\read, pin + (0 .. NACC - 1));
+*/
+
+/* H-I2 noninterference: check's public result is independent of the secret
+   `stored` (macsl self-composes check and proves the two results equal). */
+/*@ happy \prop, \name("noleak"),
+      \targets({check}), \context(\noninterference),
+      \secret(stored);
 */
 
 /* A compliant client: authenticates first, then transfers within bounds. */
