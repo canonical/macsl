@@ -30,7 +30,7 @@ UserAccount db[MAX_USERS];
    clean WP proof of the whole file is a matter of loop invariants + those coarse
    library specs, not impossibility.)
 
-   THREE of the four banking policies are instrumented ON THIS FILE (verified):
+   ALL FOUR banking policies are instrumented ON THIS FILE (verified):
      - H-R nonrepud_complete   : a balance changed ==> audit_len grew
                                  [\targets transfer, \postcond — proves at default]
      - H-R nonrepud_append_only: every earlier AuditRecord is unchanged (FULL
@@ -41,15 +41,19 @@ UserAccount db[MAX_USERS];
                                  [\targets transfer, \postcond]
      - H-T bal_integrity       : only transfer may write a balance — `main` is
                                  exempted too as the trusted bootstrap that seeds
-                                 the DB. [\writing \diff(\ALL,{transfer,main}); 47/47]
-
-   The fourth, H-S `authn`, is NOT here by design: it is an EXTERNAL check-before-
-   use capability keyed on a session global (banking.c's `session_ok`). main.c
-   folds authentication INTO transfer (it self-validates the token and returns -1
-   on caller_idx == -1), so there is no session global to name — and a file-level
-   `happy \precond` cannot reference transfer's `token` PARAMETER (WP: "unbound
-   logic variable token"). authn therefore lives on banking.c / banking_attacks.c.
-   See banking.c / banking_attacks.c, README.md and ../docs/usage.md. --- */
+                                 the DB. [\writing \diff(\ALL,{transfer,main})]
+     - H-S authn               : transfer is reachable only with the session
+                                 capability `session_authenticated`, granted by
+                                 handle_client AFTER it validates the request token
+                                 (get_role(token) != -1) — a genuine check-before-
+                                 use gate. The call-site goal goes RED if the grant
+                                 is removed (mutation-verified). [\targets transfer,
+                                 \precond]
+   H-S originally did NOT fit: main.c folds authentication INTO transfer, and a
+   file-level `happy \precond` cannot name transfer's `token` PARAMETER (WP:
+   "unbound logic variable token"). Adding the request-scoped `session_authenticated`
+   global (banking.c's `session_ok` pattern) is what makes the EXTERNAL capability
+   expressible here. See banking.c / banking_attacks.c, README.md and ../docs/usage.md. --- */
 typedef struct {
     char from[50];
     char to[50];
@@ -58,6 +62,12 @@ typedef struct {
 
 AuditRecord audit_log[1024];
 int audit_len = 0;
+
+/* H-S session capability (added so the EXTERNAL check-before-use policy `authn`
+   applies on main.c too, mirroring banking.c's `session_ok`). Request-scoped:
+   handle_client clears it and re-grants it only after validating the request's
+   token, immediately before transfer -- a genuine check-before-use gate. */
+int session_authenticated = 0;
 
 /*@ requires 0 <= audit_len < 1024;
     requires valid_read_nstring(from, 49) && valid_read_nstring(to, 49);
@@ -227,6 +237,16 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
       \separated(\written, &db[0 .. MAX_USERS - 1].balance);
 */
 
+/* H-S check-before-use (authn): transfer is reachable only once the caller holds
+   the session capability -- granted in handle_client AFTER the request's token is
+   validated (get_role(token) != -1), and dropped otherwise. banking.c uses the
+   same pattern with `session_ok`; banking_attacks.c's `unauth_endpoint` (which
+   calls transfer without granting it) shows the call-site check going red. */
+/*@ happy \prop, \name("authn"),
+      \targets({transfer}), \context(\precond),
+      session_authenticated == 1;
+*/
+
 /* =========================================================================
    3. WEB SERVER ROUTING & HTTP PROTOCOL LAYER
    ========================================================================= */
@@ -305,12 +325,21 @@ void handle_client(int client_socket) {
 
         double amount = strlen(amt_str) > 0 ? atof(amt_str) : 20.0; // Defaulting $20 if amount is absent
 
-        if (transfer(token, from, to, amount) == 0) {
-            send_json_response(client_socket, 200, "{\"status\": true}");
+        // H-S check-before-use: grant the request-scoped session capability only
+        // after validating the token, immediately before transfer (defense in depth
+        // -- transfer self-validates too, but this is the external authn gate).
+        session_authenticated = 0;
+        if (get_role(token) != -1) {
+            session_authenticated = 1;
+            if (transfer(token, from, to, amount) == 0) {
+                send_json_response(client_socket, 200, "{\"status\": true}");
+            } else {
+                send_json_response(client_socket, 200, "{\"status\": false}");
+            }
         } else {
-            send_json_response(client_socket, 200, "{\"status\": false}");
+            send_json_response(client_socket, 401, "{\"error\": \"Unauthorized\"}");
         }
-    } 
+    }
     // FALLBACK 404
     else {
         send_json_response(client_socket, 404, "{\"error\": \"Endpoint Not Found\"}");
