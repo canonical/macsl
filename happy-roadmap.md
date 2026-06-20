@@ -57,7 +57,7 @@ milestone that needs genuinely new WP plumbing. The codes `H-T`, `H-I1`, `H-R`, 
 | H-I1 | Information disclosure (first half) | read confinement | none — symmetric `\reading` pass — **shipped (Phase 1)** | 0–1 |
 | H-R  | Repudiation | audit-log completeness + append-only | `\postcond` ensures (user-supplied ghost log) — **shipped (Phase 2)** | 1 |
 | H-D  | Denial of service | totality + bounded work | RTE bundle + ghost fuel counter | 1–2 |
-| H-E  | Elevation of privilege | privilege monotonicity | ghost lattice over a protected field | 1–2 |
+| H-E  | Elevation of privilege | privilege monotonicity | `\postcond` monotonicity + `\diff` gate exemption — **shipped (Phase 3)** | 1–2 |
 | H-S  | Spoofing | check-before-use capabilities | ghost token + call-site `requires` | 2 |
 | H-I2 | Information disclosure (second half) | noninterference | relational VCs (self-composition) | 2+ |
 
@@ -193,25 +193,32 @@ few a fuzzer reaches.
 
 ---
 
-## 5. H-E — Elevation of privilege (privilege lattice)
+## 5. H-E — Elevation of privilege (privilege monotonicity) — **IMPLEMENTED (Phase 3)**
 
-Phase-0 `\writing` confinement prevents a non-owner from writing privileged state *directly*; the
-deliberate gap is that it allows going *through the API*. H-E closes the gap above the API by making
-the **privilege level itself** protected state with a monotonicity law. Proposed surface:
+`\writing` confinement prevents a non-owner from writing privileged state *directly*; the deliberate
+gap is that it allows going *through the API*. H-E closes the gap above the API by making the
+**privilege level itself** subject to a monotonicity law: outside the gate, privilege may only stay or
+descend.
+
+**Shipped realization.** macsl realizes this as a `\postcond` monotonicity obligation over a target set
+that excludes the gate via `\diff` (tested in `tests/phase3/`):
 ```c
-/*@ happy priv_lattice:
-      \privilege(proc.priv, user < admin),    // pre-normative
-      \raises_only_in(sudo_gate);
+int proc_priv = 0;   // 0 = user, 1 = admin
+/*@ happy \prop, \name("noesc"),
+      \targets(\diff(\ALL, {sudo_gate})),   // the gate is exempt; it may raise
+      \context(\postcond),
+      proc_priv <= \old(proc_priv);          // everyone else may only keep or lower privilege
 */
 ```
-Lowering is H-T applied to a (ghost shadow of the) `proc.priv` field — the standard write-confinement
-pass with `\fguard({sudo_gate}, …)` — **plus** an injected `ensures proc.priv <= \old(proc.priv)` on
-every non-exempt function (privilege may only descend outside the gate). Both pieces exist today
-(per-site checks; injected `ensures`). The lattice order over more than two levels is a small finite
-**`axiomatic`** block (or a Coq-proved order lemma), registered once and cited so the solver applies it
-as an in-scope assumption rather than re-deriving order facts per goal. The proof burden concentrates
-in the gate: `sudo_gate`'s own contract must state exactly the condition under which it raises
-privilege — and that contract is what H-S supplies.
+WP discharges it: `priv_pos.c` proves `8/8` (the gate carries no obligation; `do_work`/`drop` satisfy
+monotonicity); `priv_neg.c`'s confused-deputy `escalate` leaves its monotonicity postcondition **red**
+(`4/5`). The lattice order over more than two levels is a small finite **`axiomatic`** block (or a
+Coq-proved order lemma), or simply integer-encoded as above. `sudo_gate`'s own contract — the condition
+under which it may raise — is what **H-S** supplies.
+
+**Deferred:** the `\privilege(...)/\raises_only_in(...)` sugar and the direct-write-confinement piece
+(H-T on the privilege field with `\fguard({sudo_gate})`) — the latter waits on `\fguard`. The
+monotonicity law above is the stronger, API-spanning part and already catches the confused deputy.
 
 **Flagship use case:** filesystem permission bits. `sys_chmod` running as `user` must be unable —
 through *any* call path, including ones routed through owner functions — to end a call with

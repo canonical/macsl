@@ -96,5 +96,19 @@ check "immut/pos" 'Proved goals: +3 / 3' \
 check "immut/neg-catches" 'Proved goals: +2 / 3' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase2/immut_neg.c
 
+echo "== Phase-3 cases (H-E privilege monotonicity) =="
+
+# 15. \diff(\ALL,{sudo_gate}) exempts the gate: 2 targets, not 3.
+check "priv/gate-exempt" 'policy noesc .postcond.: 2 assertion' \
+  frama-c "${BASE[@]}" -macsl -macsl-list-targets tests/phase3/priv_pos.c
+
+# 16. Positive: non-gate functions never raise privilege -> all proved.
+check "priv/pos" 'Proved goals: +8 / 8' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase3/priv_pos.c
+
+# 17. Negative: a confused-deputy `escalate` raises priv -> monotonicity red.
+check "priv/neg-catches" 'Proved goals: +4 / 5' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase3/priv_neg.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

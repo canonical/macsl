@@ -64,10 +64,14 @@ source) — the same faithfulness discipline used elsewhere in this project.
      `AddrOf`/`StartOf`/`SizeOf` are handled specially, results are deduped per statement
      (`Term_lval.Set`) and emitted in a `DoChildrenPost`. Binds `\read` to each read lvalue's address.
    Both bind via `Logic_utils.mk_logic_AddrOf`.
-   - `\postcond` (H-R) does **not** walk sites: for each target function it types the whole policy
+   - `\postcond` (H-R, H-E) does **not** walk sites: for each target function it types the whole policy
      predicate (`assoc = []`) in the post-state and injects it as a *checked* postcondition
      (`Logic_const.new_predicate ~kind:Check` + `Annotations.add_ensures kf [(Normal, ip)]`). `Check`
-     means WP proves it but callers do not assume it.
+     means WP proves it but callers do not assume it. **H-E** (privilege monotonicity) is this context
+     with a monotonicity predicate (`priv <= \old(priv)`) and the gate excluded from the target set.
+
+   Targets form a small algebra resolved by `kfs_of_target`: `\ALL`, an explicit `{f,…}` set, and
+   `\diff(T1,T2)` (set difference) — `\diff(\ALL,{gate})` is how H-E exempts the privilege gate.
 3. **Emit** (`emit_at`). The closure is instantiated with that binding, trivially-true results are
    dropped, and the predicate is added as `AAssert ([], toplevel_predicate ~kind:Assert P)` under the
    `macsl` `Emitter`, named `<policy>: meta: …`.

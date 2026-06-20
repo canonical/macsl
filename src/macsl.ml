@@ -56,7 +56,7 @@ let () = Self.set_warn_status zero_wkey Log.Wactive
 
 type context = Writing | Reading | Postcond
 
-type target = TgAll | TgSet of string list
+type target = TgAll | TgSet of string list | TgDiff of target * target
 
 (* What a meta-variable (\written, ...) is replaced by at a site *)
 type replaced_kind =
@@ -174,12 +174,13 @@ let target_name tc e = match e.lexpr_node with
   | PLvar f -> f
   | _ -> tc.error e.lexpr_loc "a target must be a function name"
 
-let parse_targets tc e = match e.lexpr_node with
+let rec parse_targets tc e = match e.lexpr_node with
   | PLvar "\\ALL" -> TgAll
   | PLempty -> TgSet []
   | PLset elems -> TgSet (List.map (target_name tc) elems)
+  | PLapp ("\\diff", _, [ a; b ]) -> TgDiff (parse_targets tc a, parse_targets tc b)
   | _ -> tc.error e.lexpr_loc
-           "Phase 0 supports \\targets(\\ALL) or \\targets({f,...})"
+           "\\targets supports \\ALL, {f,...}, and \\diff(T1, T2)"
 
 let process_property tc loc = function
   | { lexpr_node = PLapp ("\\name", _, [ ename ]) }
@@ -366,7 +367,7 @@ class reading_visitor pol = object (self)
     else Cil.DoChildren
 end
 
-let kfs_of_target = function
+let rec kfs_of_target = function
   | TgAll ->
     List.rev
       (Globals.Functions.fold
@@ -382,6 +383,11 @@ let kfs_of_target = function
          with Not_found ->
            Self.warning "unknown target function %s; skipped" n; None)
       names
+  | TgDiff (a, b) ->
+    let excluded = kfs_of_target b in
+    List.filter
+      (fun kf -> not (List.exists (Kernel_function.equal kf) excluded))
+      (kfs_of_target a)
 
 let visit_all (vis : Visitor.frama_c_visitor) kfs =
   List.iter

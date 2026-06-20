@@ -52,7 +52,17 @@ code **H-I1**. **Not** noninterference: it proves the secret is not *read* outsi
 that exempt readers' outputs are independent of it (that is **H-I2**, relational/self-composition).
 
 ### target (`\targets`)
-The functions a policy applies to: `\targets(\ALL)` (every defined function) or `\targets({f, g})`.
+The functions a policy applies to: `\targets(\ALL)` (every defined function), `\targets({f, g})` (an
+explicit set), or `\targets(\diff(T1, T2))` (set difference). `\diff(\ALL, {gate})` = "everything
+except `gate`" — how H-E exempts the privilege gate.
+
+### privilege monotonicity (H-E)
+The Phase-3 property: outside a designated **gate**, no function may end with **higher** privilege than
+it started — `proc_priv <= \old(proc_priv)`. Realized as a `\postcond` monotonicity obligation over
+`\targets(\diff(\ALL, {gate}))` (the gate is exempt and may raise privilege). Encode the privilege
+lattice as ints (`0=user, 1=admin`) or with a small ACSL `axiomatic` for >2 levels. Catches the
+**confused deputy** — a non-gate function that raises privilege through *any* call path fails its
+monotonicity postcondition. STRIDE **Elevation of privilege** — code **H-E**.
 
 ### write site
 A statement that writes memory: a CIL `Set`, a `Call` with a result lvalue, or a `Local_init`. macsl
@@ -106,15 +116,15 @@ The policy predicate is stored untyped and re-type-checked at **each** write sit
 meta-variable bound to that site (`p_property : kf -> substitution -> predicate`). This is how one
 written policy yields a correctly-typed assert at every site.
 
-### Phase 0 / 1 / 2 / milestone M0
-Phase 0 = the `\writing` write-confinement checker (H-T); Phase 1 = the `\reading` read-confinement
-checker (H-I1); Phase 2 = the `\postcond` audit-log completeness + append-only checker (H-R) — all in
-this repo, working and tested. M0 = "run MetAcsl's own test", the step that corrected the no-op
-misdiagnosis before any code was written.
+### Phase 0 / 1 / 2 / 3 / milestone M0
+Phase 0 = `\writing` write confinement (H-T); Phase 1 = `\reading` read confinement (H-I1); Phase 2 =
+`\postcond` audit-log completeness + append-only (H-R); Phase 3 = `\postcond` + `\diff` privilege
+monotonicity (H-E) — all in this repo, working and tested. M0 = "run MetAcsl's own test", the step
+that corrected the no-op misdiagnosis before any code was written.
 
 ### STRIDE (H-T … H-I2)
 The threat taxonomy (Spoofing, Tampering, Repudiation, Information disclosure, Denial of service,
 Elevation of privilege). HAPPY's roadmap maps one property family to each; the codes `H-T … H-I2` are
 defined in `../happy-roadmap.md`. Implemented so far: **H-T** (Tampering / write confinement),
-**H-I1** (Information disclosure, first half / read confinement), and **H-R** (Repudiation / audit-log
-completeness + append-only).
+**H-I1** (Information disclosure, first half / read confinement), **H-R** (Repudiation / audit-log
+completeness + append-only), and **H-E** (Elevation of privilege / privilege monotonicity).

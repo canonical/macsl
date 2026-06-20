@@ -66,7 +66,9 @@ A HAPPY policy is a global ACSL annotation introduced by the `happy` keyword:
   on each target function — no per-site walk, no meta-variable. `P` is a whole predicate over globals
   and `\old(...)`; use it for function-level obligations (audit-log completeness, append-only). `Check`
   means WP must prove it but callers do not assume it.
-- **`\targets(\ALL)`** ranges over every defined function; **`\targets({f,g})`** over the named ones.
+- **`\targets(\ALL)`** ranges over every defined function; **`\targets({f,g})`** over the named ones;
+  **`\targets(\diff(T1, T2))`** is set difference — e.g. `\diff(\ALL, {gate})` is "everything except
+  `gate`" (used to exempt a privilege gate, H-E).
 - For `\writing`/`\reading` the predicate is re-typed at each matching site (the meta-variable bound to
   that site) and emitted as `assert <name>: meta: P`; for `\postcond` it is emitted once per function
   as `check ensures <name>: meta: P`.
@@ -94,6 +96,20 @@ function-level obligation:
 macsl proves the program's logging *discipline*; that the log persists/ is signed on real storage stays
 a trusted boundary for the risk study (roadmap GH1). The ghost log and the append code are yours;
 macsl supplies the obligation that ties writes to log growth.
+
+**Privilege monotonicity (H-E)** is the same `\postcond` mechanism plus a `\diff` exemption for the
+gate — "no function except `sudo_gate` may end with higher privilege than it started":
+
+```c
+int proc_priv = 0;   // 0 = user, 1 = admin  (encode the lattice as ints, or add an axiomatic)
+/*@ happy \prop, \name("noesc"),
+      \targets(\diff(\ALL, {sudo_gate})),   // the gate is exempt; it may raise
+      \context(\postcond),
+      proc_priv <= \old(proc_priv);          // everyone else may only keep or lower privilege
+*/
+```
+This catches the **confused deputy** — a non-gate function that raises privilege through *any* path
+fails its monotonicity postcondition, in the function that took the shortcut.
 
 > **What read confinement is and is NOT.** `\separated(\read, R)` proves no non-exempt code path
 > *syntactically reads* region `R`. It is **not** noninterference — it says nothing about what an

@@ -7,7 +7,7 @@ eval $(opam env --switch=framac-coq8)
 ./tests/run.sh
 ```
 
-Expected: `14 passed, 0 failed` (6 Phase-0 / H-T + 3 Phase-1 / H-I1 + 5 Phase-2 / H-R).
+Expected: `17 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E).
 
 ## Why a shell runner and not ptests?
 
@@ -39,6 +39,12 @@ which clashes depending on load order. `run.sh` sidesteps that by running with
 | `audit_neg.c` | completeness; `sys_unlink` changes `disk` without logging | completeness ensures unproved (`2/3`) |
 | `immut_pos.c` | append-only; `append` writes only the new slot | `3/3` |
 | `immut_neg.c` | append-only; `rewrite` overwrites `logbuf[0]` | append-only ensures unproved (`2/3`) |
+
+### `phase3/` — H-E privilege monotonicity (`\postcond` + `\diff`)
+| File | Policy | Expected |
+|---|---|---|
+| `priv_pos.c` | `proc_priv <= \old(proc_priv)` over `\diff(\ALL,{sudo_gate})`; non-gate fns never raise | `8/8` (gate exempt) |
+| `priv_neg.c` | same; `escalate` raises privilege | monotonicity ensures unproved (`4/5`) — confused deputy |
 
 Each `*_pos.c` / `*_neg.c` is a **prove/fail pair**: the negative control going red is what makes a
 green on the positive control meaningful (the non-vacuity gate — see `../docs/design.md` §4).
