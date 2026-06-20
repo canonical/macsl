@@ -58,7 +58,7 @@ milestone that needs genuinely new WP plumbing. The codes `H-T`, `H-I1`, `H-R`, 
 | H-R  | Repudiation | audit-log completeness + append-only | `\postcond` ensures (user-supplied ghost log) — **shipped (Phase 2)** | 1 |
 | H-D  | Denial of service | totality + bounded work | RTE bundle + ghost fuel counter | 1–2 |
 | H-E  | Elevation of privilege | privilege monotonicity | `\postcond` monotonicity + `\diff` gate exemption — **shipped (Phase 3)** | 1–2 |
-| H-S  | Spoofing | check-before-use capabilities | ghost token + call-site `requires` | 2 |
+| H-S  | Spoofing | check-before-use capabilities | `\precond` capability + WP's automatic call-site check — **shipped (Phase 4)** | 2 |
 | H-I2 | Information disclosure (second half) | noninterference | relational VCs (self-composition) | 2+ |
 
 ---
@@ -228,26 +228,34 @@ the helper, naming the HAPPY and the site.
 
 ---
 
-## 6. H-S — Spoofing (check-before-use capabilities)
+## 6. H-S — Spoofing (check-before-use capabilities) — **IMPLEMENTED (Phase 4)**
 
 Spoofing defenses ultimately rest on a cryptographic/external identity check a WP verifier cannot and
 should not pretend to prove — `verify_token` is a **declaration-only function** with a trusted, cited
 contract. What the verifier **can** prove, for all inputs and paths, is the *discipline* around it: no
-protected operation is reachable without the check having succeeded. Proposed surface:
+protected operation is reachable without the check having succeeded.
+
+**Shipped realization.** macsl realizes this with the **`\precond` context** (tested in
+`tests/phase4/`):
 ```c
-/*@ happy authn:
-      \capability(session_ok, \granted_by(verify_token)),   // pre-normative
-      \guards({sys_write, sys_unlink, sys_chmod});
+//@ ghost int session_ok = 0;
+/*@ assigns session_ok; ensures \result != 0 ==> session_ok == 1; */
+int verify_token(int tok);                    // trusted, declaration-only
+
+/*@ happy \prop, \name("authn"),
+      \targets({sys_write, sys_unlink, sys_chmod}),   // the guarded ops
+      \context(\precond),
+      session_ok == 1;
 */
 ```
-Lowering: a ghost boolean (or ghost token set, for per-principal capabilities) `session_ok`, writable
-**only** inside `verify_token` — enforced by the H-T pass on the ghost itself — and a meta-pass that
-strengthens each guarded function's `requires` with `session_ok` and injects the matching call-site
-`assert`. **The call-site check is the load-bearing emission:** it becomes a WP sub-goal in the
-*caller*, so an unauthenticated path to `sys_write` fails in the code that took the shortcut, not in
-the filesystem. `verify_token` contributes `ensures \result == 1 ==> session_ok` and stays a trusted
-declaration-only contract; its trust is exactly the EBIOS assumption ("token verification is correct"),
-and everything around it is Modelled.
+`emit_requires` injects `requires session_ok == 1` on each guarded function. **The load-bearing check
+is automatic:** WP enforces a callee's precondition at every call site, so an unauthenticated path to a
+guarded op fails *in the caller* — no separate call-site `assert` emission is needed. Verified:
+`authn_pos.c` (caller checks the token first) proves `5/5`; `authn_neg.c`'s `maintenance` (direct call)
+leaves `…_call_sys_write_requires_authn_meta` **red** (`4/5`). `verify_token` stays the trusted
+boundary (the EBIOS assumption "token verification is correct"); everything around it is Modelled. To
+also confine *who may grant* the capability, add an H-T policy `\separated(\written, &session_ok)` over
+`\diff(\ALL, {verify_token})`.
 
 **Flagship use case:** a session layer over the filesystem model. The negative driver is the
 forgotten-check bug — a new maintenance endpoint calling `sys_unlink` directly; the injected call-site

@@ -69,6 +69,10 @@ source) — the same faithfulness discipline used elsewhere in this project.
      (`Logic_const.new_predicate ~kind:Check` + `Annotations.add_ensures kf [(Normal, ip)]`). `Check`
      means WP proves it but callers do not assume it. **H-E** (privilege monotonicity) is this context
      with a monotonicity predicate (`priv <= \old(priv)`) and the gate excluded from the target set.
+   - `\precond` (H-S) injects `P` as a *normal* `requires` on each guarded function
+     (`Annotations.add_requires kf [new_predicate P]`). A normal requires is assumed by the body but
+     **checked by WP at every call site** — that automatic call-site obligation (no extra emission
+     needed) is what catches an unauthenticated caller, in the caller.
 
    Targets form a small algebra resolved by `kfs_of_target`: `\ALL`, an explicit `{f,…}` set, and
    `\diff(T1,T2)` (set difference) — `\diff(\ALL,{gate})` is how H-E exempts the privilege gate.
@@ -99,7 +103,7 @@ Single module, `src/macsl.ml`:
 | builtins | idempotent `Logic_builtin.register` of the keywords |
 | custom typer | `meta_type_predicate`/`meta_type_term` — substitute the meta-variables; `delay_prop` |
 | parser | `process_property`/`process_meta`; `register_parsing` (the `happy` extension) |
-| instrumentation | shared `instantiate` (per-site assert) + `emit_ensures` (per-function postcondition); `writing_visitor` (H-T), `reading_visitor` (H-I1), `\postcond` fold (H-R); `kfs_of_target`, `run_policy` (dispatches on `\context`) |
+| instrumentation | shared `instantiate` (per-site assert) + `emit_ensures` / `emit_requires` (per-function contract); `writing_visitor` (H-T), `reading_visitor` (H-I1), `\postcond` fold (H-R, H-E), `\precond` fold (H-S); `kfs_of_target` (`\ALL`/set/`\diff`), `run_policy` (dispatches on `\context`) |
 | entry | `Ast.apply_after_computed run` |
 
 ## 6. Deviations from `macsl-impl.md`

@@ -17,11 +17,21 @@ compatible). Not "broken" — see [design.md](../docs/design.md) §1.
 A global, module-level declaration that ranges over many program points, as opposed to a per-function
 contract. In macsl, written with the `happy` ACSL extension keyword. (MetAcsl uses `meta`.)
 
-### context (`\writing`, `\reading`, `\postcond`)
+### context (`\writing`, `\reading`, `\postcond`, `\precond`)
 The class of program points a policy ranges over. Implemented: `\writing` — every memory **write** in
 the target functions (H-T); `\reading` — every memory **read** (H-I1); `\postcond` — each target
-**function's postcondition** (H-R, a `check ensures`, no per-site walk). (Roadmap: `\calling`,
+**function's postcondition** (H-R, H-E; a `check ensures`); `\precond` — each target function's
+**precondition** (H-S; a normal `requires`, checked by WP at every call site). (Roadmap: `\calling`,
 invariants.)
+
+### check-before-use capability (H-S)
+The Phase-4 property: a guarded operation may be called only when a **capability** holds — modeled as
+a ghost predicate (e.g. `session_ok == 1`) granted only by a trusted (declaration-only) verifier
+(`verify_token`). Realized by the `\precond` context: macsl injects `requires <capability>` on each
+guarded function, and WP checks it **at every call site**, so an unauthenticated path fails *in the
+caller that took the shortcut*. STRIDE **Spoofing** — code **H-S**. **Not** an identity proof: that the
+verifier actually authenticates is a trusted boundary the risk study carries (roadmap GH1); macsl
+proves only the check-before-use *discipline*.
 
 ### audit-log completeness / append-only (H-R)
 The Phase-2 property (non-repudiation, at the level a deductive verifier can claim): a completeness +
@@ -116,15 +126,17 @@ The policy predicate is stored untyped and re-type-checked at **each** write sit
 meta-variable bound to that site (`p_property : kf -> substitution -> predicate`). This is how one
 written policy yields a correctly-typed assert at every site.
 
-### Phase 0 / 1 / 2 / 3 / milestone M0
+### Phase 0 / 1 / 2 / 3 / 4 / milestone M0
 Phase 0 = `\writing` write confinement (H-T); Phase 1 = `\reading` read confinement (H-I1); Phase 2 =
 `\postcond` audit-log completeness + append-only (H-R); Phase 3 = `\postcond` + `\diff` privilege
-monotonicity (H-E) — all in this repo, working and tested. M0 = "run MetAcsl's own test", the step
-that corrected the no-op misdiagnosis before any code was written.
+monotonicity (H-E); Phase 4 = `\precond` check-before-use capabilities (H-S) — all in this repo,
+working and tested. M0 = "run MetAcsl's own test", the step that corrected the no-op misdiagnosis
+before any code was written.
 
 ### STRIDE (H-T … H-I2)
 The threat taxonomy (Spoofing, Tampering, Repudiation, Information disclosure, Denial of service,
 Elevation of privilege). HAPPY's roadmap maps one property family to each; the codes `H-T … H-I2` are
 defined in `../happy-roadmap.md`. Implemented so far: **H-T** (Tampering / write confinement),
 **H-I1** (Information disclosure, first half / read confinement), **H-R** (Repudiation / audit-log
-completeness + append-only), and **H-E** (Elevation of privilege / privilege monotonicity).
+completeness + append-only), **H-E** (Elevation of privilege / privilege monotonicity), and **H-S**
+(Spoofing / check-before-use capabilities). Only **H-I2** (noninterference) is unimplemented.

@@ -110,5 +110,19 @@ check "priv/pos" 'Proved goals: +8 / 8' \
 check "priv/neg-catches" 'Proved goals: +4 / 5' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase3/priv_neg.c
 
+echo "== Phase-4 cases (H-S check-before-use capabilities) =="
+
+# 18. The capability is injected as a requires (precondition) on the guarded op.
+check "authn/print" 'requires authn: meta: session_ok' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase4/authn_pos.c
+
+# 19. Positive: authenticated caller (verify_token then sys_write) -> all proved.
+check "authn/pos" 'Proved goals: +5 / 5' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase4/authn_pos.c
+
+# 20. Negative: direct call without verify_token -> call-site precondition red.
+check "authn/neg-catches" 'Proved goals: +4 / 5' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase4/authn_neg.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

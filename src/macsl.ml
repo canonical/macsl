@@ -54,7 +54,7 @@ let () = Self.set_warn_status zero_wkey Log.Wactive
 (* HAPPY policy representation                                          *)
 (* ------------------------------------------------------------------ *)
 
-type context = Writing | Reading | Postcond
+type context = Writing | Reading | Postcond | Precond
 
 type target = TgAll | TgSet of string list | TgDiff of target * target
 
@@ -193,8 +193,9 @@ let process_property tc loc = function
       | PLvar "\\writing"  -> Writing
       | PLvar "\\reading"  -> Reading
       | PLvar "\\postcond" -> Postcond
+      | PLvar "\\precond"  -> Precond
       | _ -> tc.error econtext.lexpr_loc
-               "macsl supports \\context(\\writing | \\reading | \\postcond)"
+               "macsl supports \\context(\\writing | \\reading | \\postcond | \\precond)"
     in
     let eproperty = match tail with
       | [ x ] -> x
@@ -272,6 +273,25 @@ let emit_ensures pol kf =
     let named = { pred with pred_name = label :: "meta" :: pred.pred_name } in
     let ip = Logic_const.new_predicate ~kind:Check named in
     Annotations.add_ensures emitter kf [ (Normal, ip) ];
+    true
+  end
+
+(* H-S: inject [pol]'s predicate as a normal precondition (capability) on the
+   guarded function [kf].  A normal `requires` is *assumed* by the body but
+   *checked by WP at every call site* — that call-site obligation is what
+   catches an unauthenticated caller, in the caller that took the shortcut. *)
+let emit_requires pol kf =
+  let pred = pol.p_property kf [] in
+  if Logic_utils.is_trivially_true pred then false
+  else begin
+    let label =
+      if Number_assertions.get ()
+      then (incr counter; Printf.sprintf "%s_%d" pol.p_name !counter)
+      else pol.p_name
+    in
+    let named = { pred with pred_name = label :: "meta" :: pred.pred_name } in
+    let ip = Logic_const.new_predicate named in
+    Annotations.add_requires emitter kf [ ip ];
     true
   end
 
@@ -408,11 +428,15 @@ let run_policy pol =
     | Postcond ->
       List.fold_left (fun acc kf -> if emit_ensures pol kf then acc + 1 else acc)
         0 kfs
+    | Precond ->
+      List.fold_left (fun acc kf -> if emit_requires pol kf then acc + 1 else acc)
+        0 kfs
   in
   let descr, ctx = match pol.p_context with
     | Writing  -> "write site",      "writing"
     | Reading  -> "read site",       "reading"
-    | Postcond -> "target function", "postcond" in
+    | Postcond -> "target function", "postcond"
+    | Precond  -> "target function", "precond" in
   if n = 0 then
     Self.warning ~wkey:zero_wkey
       "policy %s expanded to 0 obligations (matched no %s)" pol.p_name descr;

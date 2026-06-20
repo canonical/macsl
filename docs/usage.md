@@ -66,6 +66,10 @@ A HAPPY policy is a global ACSL annotation introduced by the `happy` keyword:
   on each target function — no per-site walk, no meta-variable. `P` is a whole predicate over globals
   and `\old(...)`; use it for function-level obligations (audit-log completeness, append-only). `Check`
   means WP must prove it but callers do not assume it.
+- **`\context(\precond)`** (Phase 4, H-S) emits `P` as a **normal precondition** (`requires`) on each
+  target (guarded) function. A normal `requires` is assumed by the body but **checked by WP at every
+  call site** — so an unauthenticated caller fails *in the caller*. Use it for capability /
+  check-before-use disciplines.
 - **`\targets(\ALL)`** ranges over every defined function; **`\targets({f,g})`** over the named ones;
   **`\targets(\diff(T1, T2))`** is set difference — e.g. `\diff(\ALL, {gate})` is "everything except
   `gate`" (used to exempt a privilege gate, H-E).
@@ -110,6 +114,26 @@ int proc_priv = 0;   // 0 = user, 1 = admin  (encode the lattice as ints, or add
 ```
 This catches the **confused deputy** — a non-gate function that raises privilege through *any* path
 fails its monotonicity postcondition, in the function that took the shortcut.
+
+**Check-before-use capabilities (H-S)** use `\precond`: a capability `session_ok`, granted only by a
+trusted (declaration-only) `verify_token`, is required to call the guarded ops:
+
+```c
+//@ ghost int session_ok = 0;
+/*@ assigns session_ok; ensures \result != 0 ==> session_ok == 1; */
+int verify_token(int tok);                    // trusted: the identity check is NOT proved here
+
+/*@ happy \prop, \name("authn"),
+      \targets({sys_write, sys_unlink}),       // the guarded operations
+      \context(\precond),
+      session_ok == 1;
+*/
+```
+WP then checks `session_ok == 1` at **every call site** of a guarded op: a path that reaches
+`sys_write` without `verify_token` succeeding fails — in the caller. The identity check inside
+`verify_token` is the trusted boundary the risk study carries (roadmap GH1); macsl proves only the
+*discipline* around it. To additionally confine who may set `session_ok`, add an H-T policy
+`\separated(\written, &session_ok)` over `\diff(\ALL, {verify_token})`.
 
 > **What read confinement is and is NOT.** `\separated(\read, R)` proves no non-exempt code path
 > *syntactically reads* region `R`. It is **not** noninterference — it says nothing about what an
