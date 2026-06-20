@@ -145,10 +145,11 @@ echo "== Worked example (small_example: all seven HAPPY families together) =="
 check "banking/compliant" 'Proved goals: +63 / 63' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/compliant.c
 
-# 25. Ten attacks, one per policy: exactly ten goals red (attack 9 = FE2
-#     horizontal-RBAC cross-account debit on transfer_cross; attack 10 = FE10
-#     silent audit saturation, nonrepud_atcap on transfer_unlogged_atcap).
-check "banking/attacks" 'Proved goals: +63 / 73' \
+# 25. Eleven attacks, one per policy: exactly eleven goals red (attack 9 = FE2
+#     horizontal-RBAC cross-account debit; attack 10 = FE10 silent audit
+#     saturation; attack 11 = FE11 token-lifecycle replay, token_live on
+#     replay_endpoint calling protected_op without a liveness check).
+check "banking/attacks" 'Proved goals: +70 / 81' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/attacks.c
 
 # 26. The policies proved on main.c's REAL transfer(), through the ACSL libc
@@ -203,6 +204,14 @@ check "rbac/horizontal-own-account" 'Proved goals: +13 / 13' \
 #     transfer_unlogged_atcap (moves money, records only if room).
 check "audit/saturation-failclosed" 'Proved goals: +13 / 13' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/audit_saturation.c
+
+# 32. FE11 token lifecycle (discipline half), isolated and PROVED. Closes the
+#     check-before-use part of FE11: a protected op runs only against a CURRENTLY-
+#     valid token (token_active == 1 at the gate), so a revoked/expired/replayed
+#     token cannot authorize it. (Token unguessability + the expiry clock remain
+#     the trusted boundary, spec §6.) Red: case 25's replay_endpoint.
+check "token/lifecycle-live" 'Proved goals: +8 / 8' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/token_lifecycle.c
 
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

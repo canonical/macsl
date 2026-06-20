@@ -57,9 +57,49 @@ Feared events:
 - OS8: AP8 on the audit-trail and transfer interfaces — a privileged insider first fills the audit trail to its fixed capacity, then performs further transfers to observe whether transfers keep succeeding while recording silently stops, leaving an undetected non-repudiation hole — covers FE10, SS8 — likelihood V2.
 - OS9: AP9 on the session-token store and authentication interfaces — the attacker presents a previously issued token after intended use, or one captured from where it is exposed, to test whether tokens expire or can be revoked and whether replay is accepted as the legitimate holder — covers FE11, SS9 — likelihood V2.
 
-## Workshop 5 — (not authored here)
+## Workshop 5 — Risk Treatment (PROPOSED — verdict-derived, pending risk-owner sign-off)
 
-Workshop 5 (risk treatment + residual-risk acceptance) is NOT authored in this deliverable. It is fed downstream by the verification verdicts that consume W1–W4 (the EBIOS feedback loop: discharged / refuted security properties map back to the strategic and operational scenarios above), and the residual risk is then adjudicated and accepted by the risk owner.
+Fed downstream by the formal-verification campaign (macsl + Frama-C/WP) that consumed W1–W4 via the
+crosswalk (`ebios-crosswalk.md` §3). **No-blend discipline:** a WP verdict is a *hard* machine truth; it
+**informs** a *proposed* likelihood, it does **not set** the risk level — and **severity (W1) is never
+changed by a verdict**. The risk owner re-rates and signs (the human terminus); everything below is a
+proposal. Each risk scenario `R#` pairs a strategic scenario with its operational scenario; its level
+combines the W1 severity with the **proposed** post-treatment likelihood.
+
+Security measures (SCIP — formal-verification controls landed this campaign):
+- M1 verified check-before-use authentication (`authn`, H-S) on the real transfer — 53/53, 0 admits.
+- M2 verified horizontal access control (`rbac_own_account`, H-E) — no role-2 cross-account debit.
+- M3 verified privilege monotonicity (`priv_monotonic`, H-E) on the real transfer — no tier escalation.
+- M4 verified balance write-confinement (`bal_integrity`, H-T) — only transfer writes a balance.
+- M5 verified audit completeness + append-only (`nonrepud_complete`/`nonrepud_append_only`, H-R).
+- M6 verified fail-closed non-repudiation at capacity (`nonrepud_atcap`, H-R) + the runtime guard.
+- M7 verified token-lifecycle discipline (`token_live`, H-S) — no replay of a revoked/expired token.
+- M8 verified per-request termination + no-fault (`availability`, H-D) on the bounded handlers.
+- M9 verified read-confinement + non-interference (`pin_confidential`/`noleak`, H-I1/H-I2) on the core.
+
+Risk scenarios (severity from W1 · **proposed** post-treatment likelihood · proposed level):
+- R1: SS2/OS2 (FE1, FE4 forged/non-registered token authorizes a transfer) — severity G4 — proposed likelihood V1 (was V2; M1 retires the unauthenticated-call step on the real transfer) — proposed level Moderate.
+- R2: SS1/OS1 (FE2 a User debits a foreign account) — severity G4 — proposed likelihood V1 (was V2; M2 + the body guard) — proposed level Moderate.
+- R3: SS3/OS3 (FE3 balance corruption) — severity G4 — proposed likelihood V1 (was V2; M4 retires off-path tampering; in-transfer amount/sufficient-funds logic is code-enforced, not asserted — partial) — proposed level Moderate.
+- R4: SS4/OS4 (FE5 a transfer leaves no/altered audit record) — severity G3 — proposed likelihood V1 (was V2; M5) — proposed level Low.
+- R5: SS7/OS7 (FE9 privilege escalation) — severity G4 — proposed likelihood V1 (was V2; M3 on the real transfer) — proposed level Moderate.
+- R6: SS8/OS8 (FE10 silent audit saturation) — severity G4 — proposed likelihood V1 (was V2; M6, defect remediated fail-closed) — proposed level Moderate.
+- R7: SS9/OS9 (FE11 token reuse/leakage spoofing) — severity G3 — proposed likelihood V1 for the replay-of-revoked step (was V2; M7); the token-strength/expiry step is unchanged at V2 (trusted boundary) — proposed level Low for the discipline, Moderate residual.
+- R8: SS5/OS5 (FE7 denial of service via the parser) — severity G3 — proposed likelihood V2 (was V3; M8 proves per-request termination, but main.c's real query parser needs the strengthened strtok contract — partial) — proposed level Moderate.
+- R9: SS6/OS6 (FE6, FE8 clearance/credential disclosure) — severity G3 — proposed likelihood V2 (unchanged; M9 is proved on the core model, not on main.c's string layer — plane-limited) — proposed level Moderate.
+
+Residual risks (carried forward — for risk-owner acceptance, not closed by formal verification):
+- FE11 token *strength* + *expiry clock* — the cryptographic primitive (trusted boundary, §6). Non-formal treatment: a production opaque, expiring, revocable credential. **Accepted residual** pending sign-off.
+- FE6/FE8 confidentiality on the real string layer — verified on the core model only; treatment: port H-I1/H-I2 to the real handlers or accept the core-model evidence.
+- FE7 query-parser termination on the real `get_query_param` — proven sound in isolation; treatment: upstream the two `strtok` `ensures`. The server accept loop is intentionally infinite (baseline/availability control, out of per-request scope).
+- FE3 in-transfer amount/sufficient-funds checks — enforced in code, not asserted as a hyperproperty; optional treatment: add a policy.
+
+Monitoring framework: the verification suite (`./tests/run.sh`, 32/32) is the regression gate; re-run on
+any change to the handlers, the audit/RBAC logic, or the Frama-C libc contracts. Operational cycle (~1 yr)
+re-checks residuals against new attack methods; strategic cycle (~3 yr) revisits W1–W4.
+
+**DONE = risk-owner sign-off.** This W5 is MACHINE-fed (verdicts) but the residual-risk acceptance is the
+human terminus — not asserted here.
 
 ---
 
