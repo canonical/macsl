@@ -8,3 +8,10 @@ _build/
 *.cmxs
 *.o
 *.a
+
+# Coq build artifacts
+*.vo
+*.vok
+*.vos
+*.glob
+.*.aux

@@ -47,8 +47,10 @@ int audit_len = 0;
 
 /*@ requires 0 <= audit_len < 1024;
     requires valid_read_nstring(from, 49) && valid_read_nstring(to, 49);
-    requires \separated(from + (0 .. 48), &audit_log[audit_len]);
-    requires \separated(to   + (0 .. 48), &audit_log[audit_len]);
+    // object distinctness: the source strings are a different object than the
+    // audit buffer (HTTP params vs a global) -> full separation for WP.
+    requires \base_addr(from) != \base_addr((char *)&audit_log[0]);
+    requires \base_addr(to)   != \base_addr((char *)&audit_log[0]);
     assigns audit_log[audit_len], audit_len;
     ensures audit_len == \old(audit_len) + 1;     // with room, every call appends exactly one
 */
@@ -119,8 +121,8 @@ int get_role(const char *token) {
     requires \forall integer k; 0 <= k < MAX_USERS ==>
                valid_read_string(&db[k].token[0]) && valid_read_string(&db[k].username[0]);
     requires valid_read_nstring(user_sending, 49) && valid_read_nstring(user_receiving, 49);
-    requires \separated(user_sending + (0 .. 48), &audit_log[audit_len]);
-    requires \separated(user_receiving + (0 .. 48), &audit_log[audit_len]);
+    requires \base_addr(user_sending)   != \base_addr((char *)&audit_log[0]);
+    requires \base_addr(user_receiving) != \base_addr((char *)&audit_log[0]);
     assigns db[0 .. MAX_USERS - 1], audit_log[audit_len], audit_len;
 */
 int transfer(const char *token, const char *user_sending, const char *user_receiving, double amount) {
@@ -169,26 +171,26 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
        plus the loop invariant above and log_transfer's contract. This is the
        headline: the policy is machine-checked on the real function — libc and
        all. ("outside WP's reach" was wrong.)
-     - `transfer` + `log_transfer`: 68/69. The single open goal is in
-       log_transfer's BODY: the second strncpy's `valid_read_nstring(to,49)`
-       precondition.
-   COQ ESCALATION (attempted; verdict: wrong tool for this goal). Generating
-   the Coq goal (`-wp-prover coq -wp-interactive update`) shows it is a
-   MEMORY-MODEL FRAMING obligation: preserve `valid_read_nstring(to,49)` across
-   the first strncpy's writes. `valid_read_nstring` is a disjunction — its
-   init-based 49-byte case frames from the separation here, but its
-   `valid_read_string` (arbitrary-length) case needs the WHOLE string separated,
-   which the 49-byte precondition does NOT give (so as written it is not even a
-   theorem). Strengthening to object-distinctness (`\base_addr` !=) makes it a
-   theorem but SMT still won't frame `valid_read_nstring`, AND it cascades 4 new
-   call-site goals into transfer. A sound Coq proof is possible only by
-   re-deriving the strlen frame (with the `is_sint8` side-conditions on the
-   Q_strlen axioms) — brittle, and exactly the framing case
-   `frama-c/references/coq-escalation.md` says to DISSOLVE, not hand-prove (Coq
-   there is for induction / non-linear arithmetic). So this is left as a
-   precisely-characterised residual on the logger's body — NOT the policy, which
-   stands at 51/51. No admit/axiom was used.
-   Run: see tests/small_example/README.md. */
+     - `transfer` + `log_transfer`: 17/18 on log_transfer. The single open goal
+       is in log_transfer's BODY: the second strncpy's `valid_read_nstring(to,49)`
+       precondition (with the `\base_addr` object-distinctness preconditions, the
+       cascade into transfer is gone and the goal is a genuine theorem).
+   COQ ESCALATION (done end-to-end; verdict: WP's Coq backend cannot discharge
+   it either). The goal is a MEMORY-MODEL FRAMING obligation: preserve
+   `valid_read_nstring(to,49)` across the first strncpy's writes. A full hand
+   proof was written and COMPILES (coqc exit 0) — see tests/small_example/coq/
+   (frame lemmas via memcpy'def/Map.set'def + object distinctness; the init
+   disjunct closes by separation alone; the valid_read_string disjunct reduces
+   to a strlen frame). It is complete EXCEPT for exactly three
+   `is_sint8 (t3 (shift to k))` byte-typing facts. Those are guarded into every
+   `Q_strlen_*` axiom, and the only hypothesis that could supply char-typing is
+   `sconst`, which WP's own realization (wp/coqwp/Memory.v) leaves `Admitted`
+   (opaque). So the fact is unavailable to the Coq backend — which is why
+   `-wp-prover coq` returns [Unknown], not just SMT. This is the framing case
+   `frama-c/references/coq-escalation.md` says to DISSOLVE, not hand-prove. Left
+   as a precisely-characterised residual on the logger's body; NO admit/axiom is
+   in any verified result. The policy stands at transfer 51/51.
+   Run: see tests/small_example/README.md and tests/small_example/coq/README.md. */
 /*@ happy \prop, \name("nonrepud_complete"),
       \targets({transfer}), \context(\postcond),
       (\exists integer i; 0 <= i < MAX_USERS && db[i].balance != \old(db[i].balance))
