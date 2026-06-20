@@ -1,0 +1,10 @@
+_build/
+*.install
+*.merlin
+.merlin
+*.cmi
+*.cmo
+*.cmx
+*.cmxs
+*.o
+*.a

@@ -1,0 +1,12 @@
+(library
+ (name macsl)
+ (public_name macsl.core)
+ (flags (:standard -open Frama_c_kernel -w -9-26-27-32-33-37-39))
+ (libraries frama-c.kernel)
+ (optional))
+
+(plugin
+ (optional)
+ (name macsl)
+ (libraries macsl.core)
+ (site (frama-c plugins)))

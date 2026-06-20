@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# macsl Phase-0 test runner.
+#
+# Self-contained: builds the plugin, then runs each fixture with autoload
+# DISABLED (so an installed MetAcsl does not clash on the shared \prop/\written
+# builtins) and only WP + macsl loaded.  Each case asserts on WP's verdict line
+# or on a macsl diagnostic.  Exit code 0 iff every case passes.
+#
+# Usage:  ./tests/run.sh            (expects the framac-coq8 opam env active)
+set -u
+
+here="$(cd "$(dirname "$0")" && pwd)"
+root="$(dirname "$here")"
+cd "$root"
+
+echo "== building =="
+dune build 2>&1 | sed 's/^/  /' || { echo "BUILD FAILED"; exit 2; }
+
+CMXS="$root/_build/default/src/macsl.cmxs"
+[ -f "$CMXS" ] || { echo "plugin not built: $CMXS"; exit 2; }
+
+BASE=(-no-autoload-plugins -load-module "$CMXS")
+WP=(-load-plugin wp -wp -wp-prover alt-ergo,z3 -wp-timeout 5)
+
+pass=0; fail=0
+check () {  # name  expected-regex  command...
+  local name="$1" pat="$2"; shift 2
+  local out; out="$("$@" 2>&1)"
+  if grep -qE "$pat" <<<"$out"; then
+    echo "PASS  $name"; pass=$((pass+1))
+  else
+    echo "FAIL  $name  (expected /$pat/)"; echo "$out" | sed 's/^/      | /'
+    fail=$((fail+1))
+  fi
+}
+
+echo "== Phase-0 cases =="
+
+# 1. Instrumentation is visible in place (the non-vacuity gate, part 1).
+check "instr/print" 'assert macsl: iso: meta: .separated' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase0/writing_neg.c
+
+# 2. Negative control: the secret-writing site does NOT prove (teeth).
+check "neg/wp-catches" 'Proved goals: +4 / 5' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase0/writing_neg.c
+
+# 3. Positive control: nothing writes secret -> everything proves.
+check "pos/wp-allgreen" 'Proved goals: +4 / 4' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase0/writing_pos.c
+
+# 4. Vacuity: a policy that matches no write site must WARN, not pass silently.
+check "zero-expansion-warns" 'zero-expansion. Warning' \
+  frama-c "${BASE[@]}" -macsl tests/phase0/zero_targets.c
+
+# 5. list-targets reports the expansion count.
+check "list-targets" 'policy iso: 3 assertion' \
+  frama-c "${BASE[@]}" -macsl -macsl-list-targets tests/phase0/writing_neg.c
+
+# 6. -macsl-set selects a subset (here: a name that does not exist -> 0 policies).
+check "policy-select" 'Will process 0 policies' \
+  frama-c "${BASE[@]}" -macsl -macsl-set nosuch tests/phase0/writing_neg.c
+
+echo "== $pass passed, $fail failed =="
+[ "$fail" -eq 0 ]
