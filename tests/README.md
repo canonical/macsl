@@ -7,7 +7,7 @@ eval $(opam env --switch=framac-coq8)
 ./tests/run.sh
 ```
 
-Expected: `20 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E + 3 H-S).
+Expected: `23 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E + 3 H-S + 3 H-I2).
 
 ## Why a shell runner and not ptests?
 
@@ -51,6 +51,12 @@ which clashes depending on load order. `run.sh` sidesteps that by running with
 |---|---|---|
 | `authn_pos.c` | `requires session_ok==1` on `sys_write`; `handler` verifies the token first | `5/5` |
 | `authn_neg.c` | same; `maintenance` calls `sys_write` directly | call-site precondition unproved (`4/5`) — forgotten check |
+
+### `phase5/` — H-I2 noninterference via self-composition (`\noninterference`)
+| File | Policy | Expected |
+|---|---|---|
+| `noninterf_pos.c` | `\secret(stored)` on `check`; result `== attempt` (independent of secret) | synthesized twin proves (`3/3`) |
+| `noninterf_neg.c` | same; result `== attempt + stored` (leaks) | relational assert unproved (`2/3`) |
 
 Each `*_pos.c` / `*_neg.c` is a **prove/fail pair**: the negative control going red is what makes a
 green on the positive control meaningful (the non-vacuity gate — see `../docs/design.md` §4).

@@ -70,6 +70,11 @@ A HAPPY policy is a global ACSL annotation introduced by the `happy` keyword:
   target (guarded) function. A normal `requires` is assumed by the body but **checked by WP at every
   call site** — so an unauthenticated caller fails *in the caller*. Use it for capability /
   check-before-use disciplines.
+- **`\context(\noninterference)`** (Phase 5, H-I2) is the one **relational** (2-safety) property. Its
+  tail is `\secret(p, ...)` (the secret parameters), *not* a predicate. macsl **synthesizes** a
+  self-composition twin `f__selfcomp` that calls the target twice — public parameters shared, the
+  secret ones distinct (`p_a`/`p_b`) — and asserts the two results are equal; WP discharges it from the
+  target's functional contract.
 - **`\targets(\ALL)`** ranges over every defined function; **`\targets({f,g})`** over the named ones;
   **`\targets(\diff(T1, T2))`** is set difference — e.g. `\diff(\ALL, {gate})` is "everything except
   `gate`" (used to exempt a privilege gate, H-E).
@@ -134,6 +139,29 @@ WP then checks `session_ok == 1` at **every call site** of a guarded op: a path 
 `verify_token` is the trusted boundary the risk study carries (roadmap GH1); macsl proves only the
 *discipline* around it. To additionally confine who may set `session_ok`, add an H-T policy
 `\separated(\written, &session_ok)` over `\diff(\ALL, {verify_token})`.
+
+**Noninterference (H-I2)** is the relational one — "the result does not depend on the secret":
+
+```c
+/*@ assigns \nothing; ensures \result == attempt; */
+int check(int attempt, int stored);            // must carry a functional contract
+
+/*@ happy \prop, \name("noleak"), \targets({check}),
+      \context(\noninterference),
+      \secret(stored);                          // `stored` is secret; other params + \result public
+*/
+```
+macsl synthesizes `check__selfcomp(attempt, stored_a, stored_b)` (shared public input, distinct
+secrets) with `assert ra == rb`, and WP proves/refutes it from `check`'s contract. A result that leaks
+the secret (`ensures \result == attempt + stored`) makes the relational assert **red**.
+
+> **Scope of H-I2 (honest).** The self-composition is *sequential* (two calls) and sound only because
+> WP reasons through the target's **functional contract** — so the target **must carry an `ensures`**
+> relating `\result` to its inputs. The observable is `\result` and the inputs are **parameters**:
+> functions that communicate through globals or pointers (stateful noninterference, which needs store
+> duplication) are **out of scope** — two sequential calls would share global state. `\declassify` is
+> not yet implemented. Full relational verification (stateful, declassification) is future work; this
+> covers the pure-result case (the `check_password`-style oracle).
 
 > **What read confinement is and is NOT.** `\separated(\read, R)` proves no non-exempt code path
 > *syntactically reads* region `R`. It is **not** noninterference — it says nothing about what an

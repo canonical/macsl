@@ -59,7 +59,7 @@ milestone that needs genuinely new WP plumbing. The codes `H-T`, `H-I1`, `H-R`, 
 | H-D  | Denial of service | totality + bounded work | RTE bundle + ghost fuel counter | 1–2 |
 | H-E  | Elevation of privilege | privilege monotonicity | `\postcond` monotonicity + `\diff` gate exemption — **shipped (Phase 3)** | 1–2 |
 | H-S  | Spoofing | check-before-use capabilities | `\precond` capability + WP's automatic call-site check — **shipped (Phase 4)** | 2 |
-| H-I2 | Information disclosure (second half) | noninterference | relational VCs (self-composition) | 2+ |
+| H-I2 | Information disclosure (second half) | noninterference | relational VCs (self-composition) — **shipped (Phase 5), scoped** | 2+ |
 
 ---
 
@@ -265,36 +265,42 @@ guarded syscall.
 
 ---
 
-## 7. H-I2 — Noninterference (the one genuinely new mechanism)
+## 7. H-I2 — Noninterference (the one genuinely new mechanism) — **IMPLEMENTED (Phase 5, scoped)**
 
 H-I1 proves secrets are not *read* outside the enclave; H-I2 proves the enclave's **outputs do not
-depend on them** — noninterference with declassification. This is the only milestone that cannot be
-assembled from per-site checks and injected `ensures`, because the property is **relational**: it
-compares two executions. The standard WP-supported reduction is **self-composition** — analyze the
-function over two disjoint copies of the store, equate the low-labelled inputs in the `requires`, and
-assert equality of low-labelled outputs in the `ensures`. WP then produces ordinary first-order VCs,
-but over a doubled state, so E-matching cost grows sharply with function size. (Prior art in the
-Frama-C ecosystem: the relational-property / self-composition line of work — *RPP*; H-I2 should reuse a
-proven encoding rather than invent one.) The engineering substance is keeping the composed VC
-affordable: modular contract boundaries so each function's relational proof is done once and reused via
-its contract, and ground unrolling over fixed-size buffers instead of quantifiers. Proposed surface:
+depend on them**. This is the only milestone that cannot be assembled from per-site checks or injected
+contracts, because the property is **relational**: it compares two executions. The reduction is
+**self-composition**.
+
+**Shipped realization (`emit_selfcomp`, tested in `tests/phase5/`).** macsl **synthesizes** a
+self-composition twin: for a target `f`, it builds a fresh `f__selfcomp` that calls `f` twice — public
+parameters shared, the `\secret(...)` parameters split into `_a`/`_b` copies — and asserts the two
+results are equal (the add-a-function pattern from the kernel's `clone.ml`: `Cfg.cfgFun` +
+`replace_by_definition` + append the `GFun` + `mark_as_grown`). WP analyzes the new function and
+discharges the relational assert from `f`'s functional contract:
 ```c
-/*@ happy no_leak:
-      \secret(disk + (0 .. 63)),     // pre-normative relational labels
-      \public(\result, net_out),
-      \declassify(sign);
+/*@ assigns \nothing; ensures \result == attempt; */
+int check(int attempt, int stored);
+
+/*@ happy \prop, \name("noleak"), \targets({check}),
+      \context(\noninterference), \secret(stored);
 */
 ```
-**What this is NOT:** a side-channel proof. Timing, cache, and allocation behaviour are below the WP
-memory model; EBIOS keeps them (GH3). **Sequencing:** H-I2 is deliberately last — it lands only after
-H-I1's labels and enclave syntax are stable, so the relational pass reuses the same declarations rather
-than inventing a second labelling language.
+`noninterf_pos.c` (result `== attempt`) proves `3/3`; `noninterf_neg.c` (result `== attempt + stored`,
+a leak) leaves the relational assert **red** (`2/3`).
 
-**Flagship use case:** the login path. `check_password(stored, attempt)` must return a result whose
-*value* is the only thing depending on the secret — the composed VC proves two runs with different
-`stored` but equal `attempt` produce equal observable output apart from the declassified boolean. The
-negative driver returns early with a length-dependent error; the relational postcondition fails — the
-verified version of the oldest password-oracle bug in the book.
+**Scope (honest — this is the deliberately-last, hardest milestone).** The self-composition is
+*sequential* (two calls) and sound only because WP reasons through `f`'s **functional contract** — so
+`f` must carry an `ensures` relating `\result` to its inputs. The observable is `\result` and the
+inputs are **parameters**; functions that communicate through globals/pointers (**stateful**
+noninterference) are out of scope, since two sequential calls share global state — that needs genuine
+store duplication. **`\declassify`** is not yet wired. (Prior art for the full case: the Frama-C
+relational-property / self-composition work — *RPP*.) **What this is NOT:** a side-channel proof —
+timing/cache/allocation are below the WP memory model; EBIOS keeps them (GH3).
+
+**Flagship use case:** the login path. `check(attempt, stored)` must return a result whose value does
+not depend on the secret `stored`; a result that leaks it (a length-dependent error, say) fails the
+relational assert — the verified form of the oldest password-oracle bug in the book.
 
 ---
 

@@ -73,6 +73,13 @@ source) — the same faithfulness discipline used elsewhere in this project.
      (`Annotations.add_requires kf [new_predicate P]`). A normal requires is assumed by the body but
      **checked by WP at every call site** — that automatic call-site obligation (no extra emission
      needed) is what catches an unauthenticated caller, in the caller.
+   - `\noninterference` (H-I2) **synthesizes** a self-composition twin (`emit_selfcomp`): build a fresh
+     `f__selfcomp` (`Cil.emptyFunction`) whose formals share the public params and split the
+     `\secret(...)` params into `_a`/`_b`; body = two `Call`s to the target + `assert ra == rb`; then
+     `Cfg.cfgFun`, `Globals.Functions.replace_by_definition`, append the `GFun` to the global list, and
+     `Ast.mark_as_grown` (the add-a-function pattern from the kernel's `clone.ml`). WP analyzes the new
+     function and discharges the relational assert from the target's functional contract. *(Note: in
+     32.1 a `Call`'s callee is an `lhost`, not an `exp` — changed in Germanium.)*
 
    Targets form a small algebra resolved by `kfs_of_target`: `\ALL`, an explicit `{f,…}` set, and
    `\diff(T1,T2)` (set difference) — `\diff(\ALL,{gate})` is how H-E exempts the privilege gate.
@@ -103,7 +110,7 @@ Single module, `src/macsl.ml`:
 | builtins | idempotent `Logic_builtin.register` of the keywords |
 | custom typer | `meta_type_predicate`/`meta_type_term` — substitute the meta-variables; `delay_prop` |
 | parser | `process_property`/`process_meta`; `register_parsing` (the `happy` extension) |
-| instrumentation | shared `instantiate` (per-site assert) + `emit_ensures` / `emit_requires` (per-function contract); `writing_visitor` (H-T), `reading_visitor` (H-I1), `\postcond` fold (H-R, H-E), `\precond` fold (H-S); `kfs_of_target` (`\ALL`/set/`\diff`), `run_policy` (dispatches on `\context`) |
+| instrumentation | `instantiate` (per-site assert) + `emit_ensures` / `emit_requires` (per-function contract) + `emit_selfcomp` (synthesize a twin); `writing_visitor` (H-T), `reading_visitor` (H-I1), `\postcond` fold (H-R, H-E), `\precond` fold (H-S), `\noninterference` fold (H-I2); `kfs_of_target` (`\ALL`/set/`\diff`), `run_policy` (dispatches on `\context`) |
 | entry | `Ast.apply_after_computed run` |
 
 ## 6. Deviations from `macsl-impl.md`

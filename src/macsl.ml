@@ -54,7 +54,7 @@ let () = Self.set_warn_status zero_wkey Log.Wactive
 (* HAPPY policy representation                                          *)
 (* ------------------------------------------------------------------ *)
 
-type context = Writing | Reading | Postcond | Precond
+type context = Writing | Reading | Postcond | Precond | Noninterference
 
 type target = TgAll | TgSet of string list | TgDiff of target * target
 
@@ -67,8 +67,10 @@ type policy = {
   p_name    : string;
   p_target  : target;
   p_context : context;
-  (* the property, re-typed per site once the meta-variables are bound *)
+  (* the property, re-typed per site once the meta-variables are bound
+     (unused for Noninterference, which carries p_secret instead) *)
   p_property : Kernel_function.t -> (string * replaced_kind) list -> predicate;
+  p_secret  : string list;   (* Noninterference: the secret parameter names *)
   p_loc     : location;
 }
 
@@ -81,7 +83,8 @@ let gathered : policy list ref = ref []
 
 (* commands/contexts are predicate builtins; meta-variables are term builtins *)
 let kw_preds = [ "\\prop"; "\\writing"; "\\reading"; "\\calling";
-                 "\\postcond"; "\\precond";
+                 "\\postcond"; "\\precond"; "\\noninterference";
+                 "\\secret"; "\\public"; "\\declassify";
                  "\\weak_invariant"; "\\strong_invariant" ]
 let kw_terms = [ "\\written"; "\\lhost_written"; "\\read"; "\\called" ]
 
@@ -194,16 +197,30 @@ let process_property tc loc = function
       | PLvar "\\reading"  -> Reading
       | PLvar "\\postcond" -> Postcond
       | PLvar "\\precond"  -> Precond
+      | PLvar "\\noninterference" -> Noninterference
       | _ -> tc.error econtext.lexpr_loc
-               "macsl supports \\context(\\writing | \\reading | \\postcond | \\precond)"
+               "macsl supports \\context(\\writing | \\reading | \\postcond | \
+                \\precond | \\noninterference)"
     in
-    let eproperty = match tail with
-      | [ x ] -> x
-      | [] -> tc.error loc "missing the actual property predicate"
-      | _ -> tc.error loc "too many trailing arguments in policy"
+    let p_property, p_secret = match p_context with
+      | Noninterference ->
+        (* the tail names the secret parameter(s): \secret(p, ...) *)
+        let secret = match tail with
+          | [ { lexpr_node = PLapp ("\\secret", _, args) } ] ->
+            List.map (target_name tc) args
+          | _ -> tc.error loc
+                   "noninterference policy expects \\secret(param, ...)"
+        in
+        ((fun _ _ -> Logic_const.ptrue), secret)
+      | _ ->
+        let eproperty = match tail with
+          | [ x ] -> x
+          | [] -> tc.error loc "missing the actual property predicate"
+          | _ -> tc.error loc "too many trailing arguments in policy"
+        in
+        (delay_prop tc eproperty, [])
     in
-    let p_property = delay_prop tc eproperty in
-    gathered := { p_name; p_target; p_context; p_property; p_loc = loc }
+    gathered := { p_name; p_target; p_context; p_property; p_secret; p_loc = loc }
                 :: !gathered;
     Ext_terms [ Logic_const.tstring ~loc p_name ]
   | _ -> tc.error loc
@@ -292,6 +309,79 @@ let emit_requires pol kf =
     let named = { pred with pred_name = label :: "meta" :: pred.pred_name } in
     let ip = Logic_const.new_predicate named in
     Annotations.add_requires emitter kf [ ip ];
+    true
+  end
+
+(* H-I2: noninterference via SELF-COMPOSITION.  Synthesize a twin driver
+   `f__selfcomp` that calls the target [kf] twice — public parameters shared,
+   secret parameters distinct (p_a / p_b) — and asserts the two results are
+   equal.  WP discharges it modularly from [kf]'s functional contract: if the
+   result depends on a secret, the relational assert is unprovable (a leak).
+   This is the one genuinely relational (2-safety) property; see clone.ml for
+   the add-a-synthesized-function pattern. *)
+let emit_selfcomp pol kf =
+  let fname = Kernel_function.get_name kf in
+  let formals = Kernel_function.get_formals kf in
+  let rettype = Kernel_function.get_return_type kf in
+  if formals = [] || Ast_types.is_void rettype then begin
+    Self.warning
+      "noninterference: %s needs >=1 parameter and a non-void result; skipped"
+      fname;
+    false
+  end else begin
+    let loc = Cil_datatype.Location.unknown in
+    let is_secret vi = List.mem vi.vname pol.p_secret in
+    List.iter
+      (fun s ->
+         if not (List.exists (fun vi -> vi.vname = s) formals) then
+           Self.warning "noninterference: %s has no parameter named %s" fname s)
+      pol.p_secret;
+    let driver = Cil.emptyFunction (fname ^ "__selfcomp") in
+    Cil.setReturnType driver Cil_const.voidType;
+    (* public params shared; secret params split into _a / _b copies *)
+    let slots =
+      List.map
+        (fun vi ->
+           if is_secret vi then
+             let a = Cil.makeFormalVar driver (vi.vname ^ "_a") vi.vtype in
+             let b = Cil.makeFormalVar driver (vi.vname ^ "_b") vi.vtype in
+             `Sec (a, b)
+           else `Pub (Cil.makeFormalVar driver vi.vname vi.vtype))
+        formals
+    in
+    let args first =
+      List.map
+        (function
+          | `Pub p -> Cil.evar p
+          | `Sec (a, b) -> Cil.evar (if first then a else b))
+        slots
+    in
+    let ra = Cil.makeLocalVar driver "ra" rettype in
+    let rb = Cil.makeLocalVar driver "rb" rettype in
+    (* in 32.1 the callee of a Call is an lhost (not an exp) *)
+    let callee = Var (Kernel_function.get_vi kf) in
+    let call first r =
+      Cil.mkStmtOneInstr (Call (Some (Var r, NoOffset), callee, args first, loc))
+    in
+    let ret = Cil.mkStmt (Return (None, loc)) in
+    driver.sbody <- Cil.mkBlock [ call true ra; call false rb; ret ];
+    Cfg.clearCFGinfo ~clear_id:false driver;
+    Cfg.cfgFun driver;
+    Globals.Functions.replace_by_definition (Cil.empty_funspec ()) driver loc;
+    let dkf = Globals.Functions.get driver.svar in
+    let f = Ast.get () in
+    f.globals <- f.globals @ [ GFun (driver, loc) ];
+    Ast.mark_as_grown ();
+    (* the relational obligation: equal public inputs => equal public output *)
+    let tra = Logic_const.tvar (Cil.cvar_to_lvar ra) in
+    let trb = Logic_const.tvar (Cil.cvar_to_lvar rb) in
+    let pred = Logic_const.prel (Req, tra, trb) in
+    let named = { pred with pred_name = [ pol.p_name; "meta" ] } in
+    let annot =
+      Logic_const.(new_code_annotation
+                     (AAssert ([], toplevel_predicate ~kind:Assert named)))
+    in
+    Annotations.add_code_annot emitter ~kf:dkf ret annot;
     true
   end
 
@@ -396,10 +486,7 @@ let rec kfs_of_target = function
   | TgSet names ->
     List.filter_map
       (fun n ->
-         try
-           let kf = Globals.Functions.find_by_name n in
-           if Kernel_function.has_definition kf then Some kf
-           else (Self.warning "target %s has no definition; skipped" n; None)
+         try Some (Globals.Functions.find_by_name n)
          with Not_found ->
            Self.warning "unknown target function %s; skipped" n; None)
       names
@@ -417,6 +504,18 @@ let visit_all (vis : Visitor.frama_c_visitor) kfs =
 
 let run_policy pol =
   let kfs = kfs_of_target pol.p_target in
+  (* the body-walking contexts need a definition; the contract/synthesis
+     contexts accept declaration-only targets (they use the contract). *)
+  let kfs = match pol.p_context with
+    | Writing | Reading ->
+      List.filter
+        (fun kf ->
+           if Kernel_function.has_definition kf then true
+           else (Self.warning "target %a has no definition; skipped"
+                   Kernel_function.pretty kf; false))
+        kfs
+    | Postcond | Precond | Noninterference -> kfs
+  in
   let n =
     match pol.p_context with
     | Writing ->
@@ -431,12 +530,16 @@ let run_policy pol =
     | Precond ->
       List.fold_left (fun acc kf -> if emit_requires pol kf then acc + 1 else acc)
         0 kfs
+    | Noninterference ->
+      List.fold_left (fun acc kf -> if emit_selfcomp pol kf then acc + 1 else acc)
+        0 kfs
   in
   let descr, ctx = match pol.p_context with
     | Writing  -> "write site",      "writing"
     | Reading  -> "read site",       "reading"
     | Postcond -> "target function", "postcond"
-    | Precond  -> "target function", "precond" in
+    | Precond  -> "target function", "precond"
+    | Noninterference -> "target function", "noninterference" in
   if n = 0 then
     Self.warning ~wkey:zero_wkey
       "policy %s expanded to 0 obligations (matched no %s)" pol.p_name descr;

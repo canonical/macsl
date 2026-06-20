@@ -124,5 +124,19 @@ check "authn/pos" 'Proved goals: +5 / 5' \
 check "authn/neg-catches" 'Proved goals: +4 / 5' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase4/authn_neg.c
 
+echo "== Phase-5 cases (H-I2 noninterference via self-composition) =="
+
+# 21. macsl synthesizes the self-composition twin driver.
+check "ni/synthesized" 'void check__selfcomp.int attempt, int stored_a, int stored_b' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase5/noninterf_pos.c
+
+# 22. Positive: result independent of the secret -> relational assert proved.
+check "ni/pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase5/noninterf_pos.c
+
+# 23. Negative: result leaks the secret -> relational assert red.
+check "ni/neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase5/noninterf_neg.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]
