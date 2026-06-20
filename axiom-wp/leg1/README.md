@@ -52,14 +52,25 @@ itself lives in the un-vendored `Syntax.v`. Probed facts:
 - `rocq-prover` **9.0.0–9.1.1** and **`coq-equations`** are installable in this
   opam universe; the upstream repo is reachable (pin a commit, e.g. current HEAD).
 
-**Version split (the real wrinkle).** coqwp + WP's Coq driver require **Coq
-8.20.1** (Rocq 9 breaks them — the reason for the `framac-coq8` switch). The
-semantics requires **Rocq 9.x**. So leg 1 cannot live in the coqwp build; it is a
-**separate Rocq-9 development** that *re-states* the addr/included/separated defs
-+ the lemma (a trivial port — the `Memory_hardened.v` defs are plain `Z`/`lia`,
-and `Stdlib.ZArith`+`Lia` exist on Rocq 9). The re-stated Coq lemma is the
-`Coq(L)` that leg 1 anchors; the original `coqwp/Memory_hardened.v` (8.20.1) stays
-the artifact WP's green actually rests on. Leg 2 then checks Coq(L) ≡ Lean(L).
+**Update — no version split (good news).** The upstream repo has a **`coq-8.20`
+branch**: the semantics builds under **Coq 8.20.1** (Equations 1.3.1+8.20, MathComp
+2.3.0, std++ 1.11.0, coq-ext-lib 0.13.0) — the *same* Coq as coqwp. So leg 1 does
+NOT need a separate Rocq-9 dev; the re-stated Memory defs (or the coqwp ones) live
+in one Coq world. `Types.v` uses `HB.instance` (Hierarchy Builder), so **MathComp
+2.x is required** (1.x won't do — checked).
+
+**BLOCKED (this session) — coq-elpi cannot build its native plugin here.** The full
+build was attempted in a dedicated `dualtp-sem` switch (Coq 8.20.1 + Equations +
+std++ + ext-lib all install fine). But **`coq-elpi` fails to build** — identically
+across **2.3.0, 2.5.2, and rocq-elpi 3.2.0**:
+`System error: ".../rocq-elpi/elpi/elpi_plugin.cmxs: No such file or directory"`.
+It is **environmental and version-independent** (not a leg-1 flaw): `ocamlopt.opt`
+is present and works, but coq-elpi's dune build never links the plugin `.cmxs`
+(`COQ_NATIVE_COMPILER_DEFAULT=no`). Since MathComp 2.x → Hierarchy Builder →
+coq-elpi, this transitively blocks building the semantics, hence `formula_rep`,
+hence the leg-1 obligation. **Resolution path:** build in an environment where
+coq-elpi/MathComp are prebuilt (the **Coq Platform** bundle, or a CI image with the
+platform), then resume at §4–§5. Everything *else* for leg 1 is grounded and ready.
 
 ## 4. The obligation, and a caveat
 - Statement: `separated_trans_Coq ⟺ formula_rep γ pd pf vt vv ⟦sep_trans⟧ Hty`
@@ -72,25 +83,29 @@ the artifact WP's green actually rests on. Leg 2 then checks Coq(L) ≡ Lean(L).
   the `⟺` against `formula_rep`-as-`Prop` by reasoning, not by evaluation
   (spec §5.4a, §10).
 
-## 5. Next steps (the build recipe — explicit, not yet run)
-1. `opam switch create dualtp-rocq9 --packages rocq-prover.9.1.1` (or matching);
-   `opam install coq-equations` (+ any project deps).
-2. Vendor the **full** `joscoh/why3-semantics` at a **pinned commit** under
-   `axiom-wp/why3-semantics/` (mind the licence/attribution), and build it.
-3. Read the real `Syntax.v` `formula`/`term` constructors; write the
-   `⟦separated_trans⟧ : formula` term (the AST→`formula` bridge for this lemma).
+## 5. Next steps (resume here once coq-elpi/MathComp build, e.g. on Coq Platform)
+1. In an environment with **prebuilt** coq-elpi + MathComp 2.3.0 (Coq Platform
+   8.20, or a CI image), `opam install coq-equations.1.3.1+8.20
+   coq-mathcomp-ssreflect.2.3.0 coq-stdpp.1.11.0 coq-ext-lib.0.13.0`.
+2. Vendor the **full** `joscoh/why3-semantics` **`coq-8.20` branch** at a pinned
+   commit under `axiom-wp/why3-semantics/` (mind licence/attribution); `make proofs`.
+3. Read the real `Syntax.v` `formula`/`term` constructors (already mapped:
+   `Fquant Tforall` / `Fbinop Timplies` / `Fpred` / `Tfun`); write
+   `⟦separated_trans⟧ : formula` (the AST→`formula` bridge for this lemma).
 4. Add the bridge **round-trip check** (pretty-print the `formula` back through
    Why3, diff vs `why3-separated_trans.mlw`) — spec §5.8, fail-closed.
-5. Re-state the Memory defs under Rocq 9 and prove the §4 obligation; confirm it
-   is axiom-clean (`Print Assumptions` ⊆ `A_coq`).
+5. Prove the §4 obligation `Coq(L) ⟺ formula_rep …`; confirm axiom-clean
+   (`Print Assumptions` ⊆ `A_coq`).
 6. Wire a fail-closed `leg1/check.sh` + a CI job; flip `Memory.separated_trans`'s
    `crosscheck` status toward certified.
 
 ## Status
 - [x] Ground-truth `Why3(L)` extracted; Why3≡Coq≡Lean confirmed by inspection.
-- [x] Fragment coverage: **PASS** (in-fragment).
-- [x] Build path grounded (Rocq 9 + Equations installable; full project reachable;
-      version-split resolved as a separate Rocq-9 dev).
-- [ ] Full semantics vendored + built. **(blocked-by-effort; recipe in §5)**
+- [x] Fragment coverage: **PASS** (in-fragment); MathComp 2.x required (`HB.instance`).
+- [x] Toolchain: **coq-8.20 branch found** — semantics builds on Coq 8.20.1 (no
+      Rocq-9 split). Coq + Equations + std++ + ext-lib install fine.
+- [ ] Full semantics built. **BLOCKED: coq-elpi `.cmxs` fails to build in this
+      environment (2.3.0/2.5.2/3.2.0, identical, env-not-version) → MathComp 2.x →
+      semantics blocked. Resolve on Coq Platform / a prebuilt-coq-elpi image (§3, §5).**
 - [ ] `⟦separated_trans⟧` `formula` term + bridge round-trip.
 - [ ] Obligation `Coq(L) ⟺ formula_rep …` proved, axiom-clean.

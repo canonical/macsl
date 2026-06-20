@@ -37,15 +37,20 @@ axiom set (what the `lean` skill's Quality Gate accepts). The spec's earlier "co
 (`by_cases`, `Int`), so `leanwp/check.sh` and `frama-c-dual-tp-spec.md §6` use the standard set and name it
 honestly. This is exactly the code-vs-doc alignment the PyCSL audit flagged — applied here from day one.
 
-## Leg 1 (semantic Why3↔Coq) — feasibility spike DONE for `separated_trans`
-See `leg1/`. Grounded findings: the verbatim `Why3(separated_trans)` is extracted
-(`leg1/why3-separated_trans.mlw`, from WP's `memaddr.mlw`) and the Why3/Coq/Lean
-statements are confirmed identical by inspection; **fragment coverage PASS**
-(in-fragment FOL); build path grounded — needs Rocq 9.x + `coq-equations` + the
-**full** `joscoh/why3-semantics` (the 3 vendored files are leaves), so leg 1 is a
-**separate Rocq-9 dev** (coqwp stays on Coq 8.20.1). The obligation proof is
-**not yet started** (blocked-by-effort; recipe in `leg1/README.md` §5). No green
-is claimed.
+## Leg 1 (semantic Why3↔Coq) — spike DONE, build BLOCKED on coq-elpi
+See `leg1/`. Grounded: the verbatim `Why3(separated_trans)` is extracted
+(`leg1/why3-separated_trans.mlw`, from WP's `memaddr.mlw`), Why3≡Coq≡Lean confirmed
+by inspection; **fragment coverage PASS**. Toolchain update: the semantics has a
+**`coq-8.20` branch** — it builds on Coq 8.20.1 (no Rocq-9 split, contrary to the
+first spike). Coq + Equations + std++ + ext-lib install fine.
+
+**BLOCKER (this session):** building the semantics needs MathComp 2.x (`Types.v`
+uses `HB.instance`) → Hierarchy Builder → **coq-elpi**, and coq-elpi **fails to
+build in this environment** — identically across 2.3.0 / 2.5.2 / rocq-elpi 3.2.0:
+`elpi_plugin.cmxs: No such file` (environmental, version-independent; `ocamlopt`
+works). So `formula_rep` is unbuildable here and the obligation is **not started**.
+Resolve on a Coq-Platform / prebuilt-coq-elpi environment, then resume at
+`leg1/README.md` §5. No green is claimed.
 
 ## Next (per spec §7)
 1. **Leg 1:** execute `leg1/README.md` §5 — vendor+build the full semantics under
