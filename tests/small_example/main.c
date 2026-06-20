@@ -59,7 +59,15 @@ UserAccount db[MAX_USERS];
    file-level `happy \precond` cannot name transfer's `token` PARAMETER (WP:
    "unbound logic variable token"). Adding the request-scoped `session_authenticated`
    global (banking.c's `session_ok` pattern) is what makes the EXTERNAL capability
-   expressible here. See banking.c / banking_attacks.c, README.md and ../docs/usage.md. --- */
+   expressible here.
+
+   H-D (Denial of service): NOT instrumented here. `main` carries `terminates
+   \false;` (its accept loop is intentionally infinite — out of H-D scope). H-D on
+   the real `get_query_param` does NOT discharge: its `strtok` loop has no variant
+   provable through Frama-C's coarse `strtok` contract (a *proof* limitation, not a
+   DoS bug — it terminates at runtime). Making it provable needs a strengthened
+   `strtok` ghost contract; until then the crisp H-D `availability` (`\context(\total)`)
+   lives on banking.c. See banking.c / banking_attacks.c, README.md and ../docs/usage.md. --- */
 typedef struct {
     char from[50];
     char to[50];
@@ -370,6 +378,11 @@ void handle_client(int client_socket) {
 /* =========================================================================
    4. BOOTSTRAPPING & MAIN DRIVER LOOP
    ========================================================================= */
+/* The server's accept loop is INTENTIONALLY non-terminating — `terminates
+   \false;` is the ACSL way to state "this function need not finish", so it is
+   correctly OUT of scope for H-D totality (H-D bounds each *request*, not the
+   server). This is a ghost-only annotation; no executable C is changed. */
+/*@ terminates \false; */
 int main() {
     // Seed mock data for runtime validation
     strcpy(db[0].username, "admin_user");     strcpy(db[0].password, "admin_userpass");     db[0].role = 1; db[0].balance = 9999.0;

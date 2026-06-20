@@ -116,3 +116,21 @@ int check(int attempt, int stored);
       \targets({check}), \context(\noninterference),
       \secret(stored);
 */
+
+/* ATTACK 8 — H-D denial of service (the confused parser): a crafted `len` drives
+   a loop that fails to make progress on some inputs (it only advances on odd i),
+   so the loop variant cannot be shown to strictly decrease -> the termination
+   goal is red. The verified form of "a malformed length field hangs the parser." */
+/*@ requires len >= 0; assigns \nothing; */
+void parse_request(int len)
+{
+  int i = 0;
+  /*@ loop invariant 0 <= i;
+      loop assigns i;
+      loop variant len - i; */
+  while (i < len) { if (i % 2 == 1) i++; }   /* even i: no progress -> no decrease */
+}
+/*@ happy \prop, \name("availability"),
+      \targets({parse_request}), \context(\total),
+      \true;
+*/

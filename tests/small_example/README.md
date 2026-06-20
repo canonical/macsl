@@ -3,8 +3,9 @@
 A banking-style backend (authenticate / transfer / audit over a tiny HTTP layer) and the **HAPPY**
 policies that secure it. This is the **flagship example** for `macsl`: it shows security policies
 (1) attached to **realistic** libc-using code, (2) **proved** on a crisp compliant core, and
-(3) **caught going red** on deliberate violations — across **all six HAPPY/STRIDE families**
-(H-T, H-R, H-S, H-E, H-I1, H-I2). Those three jobs are split across three `.c` files on purpose —
+(3) **caught going red** on deliberate violations — across **all seven HAPPY families**
+(H-T, H-R, H-S, H-E, H-I1, H-I2, H-D), i.e. the full six STRIDE letters S/T/R/I/D/E. Those three jobs
+are split across three `.c` files on purpose —
 each is load-bearing; none is redundant.
 
 ## The three files and their roles
@@ -12,8 +13,8 @@ each is load-bearing; none is redundant.
 | File | Role | What it is | `macsl -wp` result |
 |---|---|---|---|
 | **`main.c`** | **Realistic integration** | A full HTTP server (three routes) using real libc — `strtok`/`strcmp`/`strncpy`, `read`/`write`, `socket`/`accept`, variadic `snprintf`/`sscanf` — carrying the audit log + `log_transfer`. **Five policies are instrumented here on the real code** — the four banking ones (H-R `nonrepud_complete`, H-R `nonrepud_append_only`, H-T `bal_integrity`, H-S `authn`) plus **H-E `priv_monotonic`**. | `nonrepud_complete` **1/1** on `transfer`; `bal_integrity` **50/50** across the non-exempt functions; `authn` **1/1** (call-site check in `handle_client`); `priv_monotonic` **1/1** on `transfer`. `nonrepud_append_only` (full `AuditRecord` equality) is **context-bloated** on this big function, so its frame is proved **deterministically on an isolated driver** (`audit_append_frame.c`, see note). The *whole file* isn't all-green (the routes need loop invariants + libc specs) — which is exactly why `banking.c` exists. |
-| **`banking.c`** | **Compliant core (the positive proof)** | A focused, fully-contracted distillation of `main.c`'s security-relevant core (accounts, audit log, `authenticate`, `log_transfer`, `transfer`, plus a confidential `pin` and a `check` verifier) carrying **six policies across five families** (H-R ×2, H-S, H-T, H-I1, H-I2). The unambiguous "every policy holds" artifact. | **43/43** — all green. |
-| **`banking_attacks.c`** | **Negative controls (the teeth)** | **Seven attacks**, **one per policy**, each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **34/41** — exactly **seven** goals red, one per attack. |
+| **`banking.c`** | **Compliant core (the positive proof)** | A focused, fully-contracted distillation of `main.c`'s security-relevant core (accounts, audit log, `authenticate`, `log_transfer`, `transfer`, a confidential `pin`, a `check` verifier, and a bounded request handler) carrying **seven policies across six families** (H-R ×2, H-S, H-T, H-I1, H-I2, H-D). The unambiguous "every policy holds" artifact. | **63/63** — all green. |
+| **`banking_attacks.c`** | **Negative controls (the teeth)** | **Eight attacks**, **one per policy**, each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **41/49** — exactly **eight** goals red, one per attack. |
 
 **Why three, not one.** `main.c` answers *"do the policies attach to real-world code?"* (yes — the
 libc layer is **not** "out of WP's reach"). `banking.c` answers *"do the policies hold?"* on a core
@@ -36,9 +37,20 @@ attack `escalate` still sits with the other negative controls.)
 | `priv_monotonic` | **H-E** | `\postcond` | a transfer never raises anyone's privilege | `main.c` `transfer` (1/1) | `escalate` |
 | `pin_confidential` | **H-I1** | `\reading` | no code reads a confidential PIN | `banking.c` (`\separated(\read, pin)`) | `leak_pin` |
 | `noleak` | **H-I2** | `\noninterference` | `check`'s public result is independent of the secret | `banking.c` (self-composition) | `check` (leak) |
+| `availability` | **H-D** | `\total` | the request handler always returns (terminates) and faults on no input | `banking.c` `find_first_overdrawn` (+`-wp-rte`) | `parse_request` |
 
-These seven policies cover **all six** HAPPY families (**H-T, H-R, H-S, H-E, H-I1, H-I2**) — full family
-coverage. No family is left to `happy-roadmap.md` only.
+These eight policy instances cover **all seven** HAPPY families (**H-T, H-R, H-S, H-E, H-I1, H-I2, H-D**)
+— the full six STRIDE letters (S/T/R/I/D/E). No family is left to `happy-roadmap.md` only.
+
+**On `availability` (H-D).** `\context(\total)` adds a `terminates` clause WP must discharge from the
+function's `loop variant`(s); bundled with `-wp-rte` it is the "never hangs, never crashes" theorem over
+*every* input. The DoS attack `parse_request` (a crafted `len` driving a loop that fails to make progress)
+leaves its variant-decrease goal **red**. Scope (roadmap GH2): this bounds **WP-modelled loops** — not
+wall-clock, `malloc`, or OS/socket behaviour. `main.c`'s server accept-loop is **intentionally** infinite
+and carries `terminates \false;` (out of H-D scope by design); and H-D on `main.c`'s real `get_query_param`
+does **not** discharge — its `strtok`-based loop has no variant provable through Frama-C's coarse `strtok`
+contract (a *proof* limitation, not a DoS bug). Making it provable needs a strengthened `strtok` ghost
+contract; until then the crisp H-D lives on `banking.c`, the realistic parser is the honest gap.
 
 **On `priv_monotonic` (H-E).** Roles are `0`=super-admin … `2`=user, so a *smaller* number is *more*
 privilege and "no escalation" is the monotonicity law `role >= \old(role)`. It is scoped to `transfer`
@@ -84,7 +96,7 @@ Two notes on the `main.c` instrumentation, both honest costs of *realistic* data
 - `bal_integrity` exempts `main` alongside `transfer` because `main()` seeds the DB balances at
   startup (the trusted bootstrap); banking.c had no bootstrap, so the question didn't arise.
 
-## The seven attacks (caught in `banking_attacks.c`)
+## The eight attacks (caught in `banking_attacks.c`)
 
 | Attack | Violates | Caught as |
 |---|---|---|
@@ -95,6 +107,7 @@ Two notes on the `main.c` instrumentation, both honest costs of *realistic* data
 | `escalate` — confused deputy: lowers a role (grants super-admin) | `priv_monotonic` (H-E) | `escalate…priv_monotonic` red |
 | `leak_pin` — reads a confidential PIN into a public sink | `pin_confidential` (H-I1) | `leak_pin…pin_confidential` red |
 | `check` (leak) — result depends on the secret (`attempt + stored`) | `noleak` (H-I2) | `check_selfcomp…noleak` red |
+| `parse_request` — crafted `len` drives a no-progress loop | `availability` (H-D) | `parse_request…terminates`/`loop variant` red |
 
 ## Run
 
@@ -114,11 +127,13 @@ $FC -wp-prop priv_monotonic -wp-fct transfer    tests/small_example/main.c   # 1
 # an isolated driver instead -- a bounded step budget, not a wall-clock grind:
 $FC -wp-split -wp-steps 50000 -wp-timeout 60 tests/small_example/audit_append_frame.c   # 6/6 (deterministic)
 
-# --- banking.c : the compliant core, six policies (five families) all green ---
-$FC tests/small_example/banking.c                          # 43/43
+# --- banking.c : the compliant core, seven policies (six families) all green ---
+$FC tests/small_example/banking.c                          # 63/63
+# H-D availability, full claim (terminates + never-faults) on the request handler:
+$FC -wp-rte -wp-fct find_first_overdrawn tests/small_example/banking.c   # all green (Terminating)
 
-# --- banking_attacks.c : negative controls, exactly seven goals red ---
-$FC tests/small_example/banking_attacks.c                  # 34/41
+# --- banking_attacks.c : negative controls, exactly eight goals red ---
+$FC tests/small_example/banking_attacks.c                  # 41/49
 ```
 
 (`banking.c` / `banking_attacks.c` are also cases 24–25 in `../run.sh`. The `main.c` proof-status

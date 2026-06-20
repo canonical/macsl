@@ -98,6 +98,26 @@ void transfer(int from, int to, int amount)
       \secret(stored);
 */
 
+/* --- a bounded request handler: scans the fixed-size ledger and returns. The
+   loop variant makes termination a WP goal; there is no unbounded work. --- */
+/*@ assigns \nothing; */
+int find_first_overdrawn(void)
+{
+  /*@ loop invariant 0 <= i <= NACC;
+      loop assigns i;
+      loop variant NACC - i; */
+  for (int i = 0; i < NACC; i++)
+    if (balance[i] < 0) return i;
+  return -1;
+}
+
+/* H-D availability: the handler always returns (terminates) and -wp-rte proves
+   it faults on no input -- the "never hangs, never crashes" theorem. */
+/*@ happy \prop, \name("availability"),
+      \targets({find_first_overdrawn}), \context(\total),
+      \true;
+*/
+
 /* A compliant client: authenticates first, then transfers within bounds. */
 void client(int from, int to, int amount)
 {

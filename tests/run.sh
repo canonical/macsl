@@ -138,15 +138,15 @@ check "ni/pos" 'Proved goals: +3 / 3' \
 check "ni/neg-catches" 'Proved goals: +2 / 3' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase5/noninterf_neg.c
 
-echo "== Worked example (small_example: all six HAPPY families together) =="
+echo "== Worked example (small_example: all seven HAPPY families together) =="
 
-# 24. Compliant banking core: six policies across five families (H-R x2, H-S, H-T,
-#     H-I1 read confinement, H-I2 noninterference) all hold.
-check "banking/compliant" 'Proved goals: +43 / 43' \
+# 24. Compliant banking core: seven policies across six families (H-R x2, H-S, H-T,
+#     H-I1 read confinement, H-I2 noninterference, H-D availability/totality) all hold.
+check "banking/compliant" 'Proved goals: +63 / 63' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/banking.c
 
-# 25. Seven attacks, one per policy: exactly seven goals red.
-check "banking/attacks" 'Proved goals: +34 / 41' \
+# 25. Eight attacks, one per policy: exactly eight goals red.
+check "banking/attacks" 'Proved goals: +41 / 49' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/banking_attacks.c
 
 # 26. The policies proved on main.c's REAL transfer(), through the ACSL libc
@@ -169,6 +169,13 @@ check "mainc/policy-on-real-transfer" 'Proved goals: +52 / 52' \
 check "audit-frame/deterministic" 'Proved goals: +6 / 6' \
   frama-c "${BASE[@]}" -load-plugin wp -wp -wp-prover alt-ergo,z3 -wp-split -wp-steps 50000 \
     -wp-timeout 60 -macsl tests/small_example/audit_append_frame.c
+
+# 28. H-D availability, FULL claim on the bounded request handler: terminates
+#     (\total -> a terminates clause WP discharges from the loop variant) AND
+#     -wp-rte (never faults). The "never hangs, never crashes" theorem.
+check "hd/availability-rte" 'Proved goals: +23 / 23' \
+  frama-c "${BASE[@]}" "${WP[@]}" -wp-rte -macsl -wp-fct find_first_overdrawn \
+    tests/small_example/banking.c
 
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

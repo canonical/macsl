@@ -54,7 +54,7 @@ let () = Self.set_warn_status zero_wkey Log.Wactive
 (* HAPPY policy representation                                          *)
 (* ------------------------------------------------------------------ *)
 
-type context = Writing | Reading | Postcond | Precond | Noninterference
+type context = Writing | Reading | Postcond | Precond | Noninterference | Total
 
 type target = TgAll | TgSet of string list | TgDiff of target * target
 
@@ -198,9 +198,10 @@ let process_property tc loc = function
       | PLvar "\\postcond" -> Postcond
       | PLvar "\\precond"  -> Precond
       | PLvar "\\noninterference" -> Noninterference
+      | PLvar "\\total" -> Total
       | _ -> tc.error econtext.lexpr_loc
                "macsl supports \\context(\\writing | \\reading | \\postcond | \
-                \\precond | \\noninterference)"
+                \\precond | \\noninterference | \\total)"
     in
     let p_property, p_secret = match p_context with
       | Noninterference ->
@@ -311,6 +312,26 @@ let emit_requires pol kf =
     Annotations.add_requires emitter kf [ ip ];
     true
   end
+
+(* H-D: add a `terminates` clause (the totality claim) to the target function.
+   WP must then prove it — discharged from the function's `loop variant`s, so a
+   missing or non-decreasing variant turns the termination goal red.  This is the
+   "always returns" half; the "never faults" half is `-wp-rte` at run time.  We
+   deliberately do NOT skip a trivially-\true predicate: the whole point is to
+   attach the clause so WP checks termination.  (The roadmap's `\fuel(expr)`
+   bounded-work ghost and a hard meta-pass error on a variant-less loop are
+   refinements left as TODO — WP already reddens a variant-less/looping target.) *)
+let emit_terminates pol kf =
+  let pred = pol.p_property kf [] in
+  let label =
+    if Number_assertions.get ()
+    then (incr counter; Printf.sprintf "%s_%d" pol.p_name !counter)
+    else pol.p_name
+  in
+  let named = { pred with pred_name = label :: "meta" :: pred.pred_name } in
+  let ip = Logic_const.new_predicate named in
+  Annotations.add_terminates emitter kf ip;
+  true
 
 (* H-I2: noninterference via SELF-COMPOSITION.  Synthesize a twin driver
    `f__selfcomp` that calls the target [kf] twice — public parameters shared,
@@ -507,7 +528,7 @@ let run_policy pol =
   (* the body-walking contexts need a definition; the contract/synthesis
      contexts accept declaration-only targets (they use the contract). *)
   let kfs = match pol.p_context with
-    | Writing | Reading ->
+    | Writing | Reading | Total ->
       List.filter
         (fun kf ->
            if Kernel_function.has_definition kf then true
@@ -533,13 +554,17 @@ let run_policy pol =
     | Noninterference ->
       List.fold_left (fun acc kf -> if emit_selfcomp pol kf then acc + 1 else acc)
         0 kfs
+    | Total ->
+      List.fold_left (fun acc kf -> if emit_terminates pol kf then acc + 1 else acc)
+        0 kfs
   in
   let descr, ctx = match pol.p_context with
     | Writing  -> "write site",      "writing"
     | Reading  -> "read site",       "reading"
     | Postcond -> "target function", "postcond"
     | Precond  -> "target function", "precond"
-    | Noninterference -> "target function", "noninterference" in
+    | Noninterference -> "target function", "noninterference"
+    | Total    -> "target function", "total" in
   if n = 0 then
     Self.warning ~wkey:zero_wkey
       "policy %s expanded to 0 obligations (matched no %s)" pol.p_name descr;

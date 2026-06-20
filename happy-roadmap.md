@@ -56,7 +56,7 @@ milestone that needs genuinely new WP plumbing. The codes `H-T`, `H-I1`, `H-R`, 
 | H-T  | Tampering | write confinement | none — **shipped (Phase 0)** | 0 |
 | H-I1 | Information disclosure (first half) | read confinement | none — symmetric `\reading` pass — **shipped (Phase 1)** | 0–1 |
 | H-R  | Repudiation | audit-log completeness + append-only | `\postcond` ensures (user-supplied ghost log) — **shipped (Phase 2)** | 1 |
-| H-D  | Denial of service | totality + bounded work | RTE bundle + ghost fuel counter | 1–2 |
+| H-D  | Denial of service | totality + bounded work | `\context(\total)` adds a `terminates` clause + `-wp-rte` bundle — **shipped (totality; `\fuel` bounded-work ghost is TODO)** | 1–2 |
 | H-E  | Elevation of privilege | privilege monotonicity | `\postcond` monotonicity + `\diff` gate exemption — **shipped (Phase 3)** | 1–2 |
 | H-S  | Spoofing | check-before-use capabilities | `\precond` capability + WP's automatic call-site check — **shipped (Phase 4)** | 2 |
 | H-I2 | Information disclosure (second half) | noninterference | relational VCs (self-composition) — **shipped (Phase 5), scoped** | 2+ |
