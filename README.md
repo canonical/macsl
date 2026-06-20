@@ -11,8 +11,7 @@ mechanism, with one deliberate design change: macsl instruments **in place**, so
 frama-c file.c -macsl -wp
 ```
 
-works directly — **no `-then-last`, no file-position trap** (see [docs/design.md](docs/design.md) for
-why that matters). Licence: LGPL-2.1 (inherited from MetAcsl).
+works directly. Licence: LGPL-2.1 (inherited from MetAcsl).
 
 ## Status
 
@@ -24,11 +23,7 @@ completeness + append-only; **H-E**, privilege monotonicity via `\diff` gate exe
 **Frama-C 32.1 (Germanium)**; `./tests/run.sh` is green (23/23). The roadmap is in
 [`happy-roadmap.md`](happy-roadmap.md); the design rationale is [`macsl-impl.md`](macsl-impl.md).
 
-> **Honest note.** macsl was first conceived to *fix* MetAcsl, believed to be a silent no-op on
-> 32.1. Running MetAcsl's own test (milestone M0) showed that was an **invocation-order mistake**, not
-> a plugin bug — MetAcsl works. macsl's reason to exist is therefore the **footgun-free in-place CLI**,
-> the rename to HAPPY, and the STRIDE roadmap — *not* "MetAcsl is broken." See
-> [docs/design.md](docs/design.md) §1.
+A [flagship example](tests/small_example) is available.
 
 ## Quick start
 
