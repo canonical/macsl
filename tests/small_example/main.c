@@ -23,6 +23,35 @@ typedef struct {
 
 UserAccount db[MAX_USERS];
 
+/* --- Audit log (non-repudiation). Every balance-changing transfer appends one
+   record here; old records are never overwritten. The HAPPY policies that make
+   this a machine-checked guarantee are verified on the WP-tractable distillation
+   `banking.c` (this file's socket/string layer is outside WP's reach):
+     - H-R nonrepud_complete   : balance changed  ==> audit_len grew
+     - H-R nonrepud_append_only: \forall i<old(audit_len); audit[i] unchanged
+     - H-S authn               : transfer requires an authenticated session
+     - H-T bal_integrity       : only transfer may write a balance
+   See banking.c / banking_attacks.c and ../docs/usage.md. --- */
+typedef struct {
+    char from[50];
+    char to[50];
+    double amount;
+} AuditRecord;
+
+AuditRecord audit_log[1024];
+int audit_len = 0;
+
+void log_transfer(const char *from, const char *to, double amount) {
+    if (audit_len < 1024) {
+        strncpy(audit_log[audit_len].from, from, sizeof(audit_log[audit_len].from) - 1);
+        audit_log[audit_len].from[sizeof(audit_log[audit_len].from) - 1] = '\0';
+        strncpy(audit_log[audit_len].to, to, sizeof(audit_log[audit_len].to) - 1);
+        audit_log[audit_len].to[sizeof(audit_log[audit_len].to) - 1] = '\0';
+        audit_log[audit_len].amount = amount;
+        audit_len++;
+    }
+}
+
 // Helper to look up parameters in a query string (e.g., "?user=alice&to=bob")
 void get_query_param(const char *query, const char *key, char *dest, size_t max_len) {
     dest[0] = '\0';
@@ -98,6 +127,7 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
     // Execute atomic balance shifting
     db[sender_idx].balance -= amount;
     db[receiver_idx].balance += amount;
+    log_transfer(user_sending, user_receiving, amount); // non-repudiation: record it
     return 0; // Success
 }
 

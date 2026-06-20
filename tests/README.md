@@ -7,7 +7,7 @@ eval $(opam env --switch=framac-coq8)
 ./tests/run.sh
 ```
 
-Expected: `23 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E + 3 H-S + 3 H-I2).
+Expected: `25 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E + 3 H-S + 3 H-I2 + 2 worked-example).
 
 ## Why a shell runner and not ptests?
 
@@ -57,6 +57,15 @@ which clashes depending on load order. `run.sh` sidesteps that by running with
 |---|---|---|
 | `noninterf_pos.c` | `\secret(stored)` on `check`; result `== attempt` (independent of secret) | synthesized twin proves (`3/3`) |
 | `noninterf_neg.c` | same; result `== attempt + stored` (leaks) | relational assert unproved (`2/3`) |
+
+### `small_example/` — worked example (H-R + H-S + H-T on one system)
+| File | Role | Expected |
+|---|---|---|
+| `banking.c` | compliant banking core, all four policies | `18/18` |
+| `banking_attacks.c` | four attacks, one per policy | `25/29` (four red) |
+| `main.c` | the full HTTP example (now with `log_transfer`); not WP-verified | — |
+
+See `small_example/README.md` for the policy↔attack table.
 
 Each `*_pos.c` / `*_neg.c` is a **prove/fail pair**: the negative control going red is what makes a
 green on the positive control meaningful (the non-vacuity gate — see `../docs/design.md` §4).

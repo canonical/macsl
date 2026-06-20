@@ -138,5 +138,15 @@ check "ni/pos" 'Proved goals: +3 / 3' \
 check "ni/neg-catches" 'Proved goals: +2 / 3' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase5/noninterf_neg.c
 
+echo "== Worked example (small_example/banking: H-R + H-S + H-T together) =="
+
+# 24. Compliant banking core: all four policies hold.
+check "banking/compliant" 'Proved goals: +18 / 18' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/banking.c
+
+# 25. Four attacks, one per policy: exactly four goals red.
+check "banking/attacks" 'Proved goals: +25 / 29' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/banking_attacks.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]
