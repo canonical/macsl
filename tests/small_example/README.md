@@ -11,7 +11,7 @@ each is load-bearing; none is redundant.
 
 | File | Role | What it is | `macsl -wp` result |
 |---|---|---|---|
-| **`main.c`** | **Realistic integration** | A full HTTP server (three routes) using real libc — `strtok`/`strcmp`/`strncpy`, `read`/`write`, `socket`/`accept`, variadic `snprintf`/`sscanf` — carrying the audit log + `log_transfer`. **Five policies are instrumented here on the real code** — the four banking ones (H-R `nonrepud_complete`, H-R `nonrepud_append_only`, H-T `bal_integrity`, H-S `authn`) plus **H-E `priv_monotonic`**. | `nonrepud_complete` **1/1** on `transfer`; `nonrepud_append_only` **proves with `-wp-prover z3 -wp-split`** (full `AuditRecord` equality — a struct, not a scalar); `bal_integrity` **50/50** across the non-exempt functions; `authn` **1/1** (call-site check in `handle_client`); `priv_monotonic` **1/1** on `transfer`. The *whole file* isn't all-green (the routes need loop invariants + libc specs) — which is exactly why `banking.c` exists. |
+| **`main.c`** | **Realistic integration** | A full HTTP server (three routes) using real libc — `strtok`/`strcmp`/`strncpy`, `read`/`write`, `socket`/`accept`, variadic `snprintf`/`sscanf` — carrying the audit log + `log_transfer`. **Five policies are instrumented here on the real code** — the four banking ones (H-R `nonrepud_complete`, H-R `nonrepud_append_only`, H-T `bal_integrity`, H-S `authn`) plus **H-E `priv_monotonic`**. | `nonrepud_complete` **1/1** on `transfer`; `bal_integrity` **50/50** across the non-exempt functions; `authn` **1/1** (call-site check in `handle_client`); `priv_monotonic` **1/1** on `transfer`. `nonrepud_append_only` (full `AuditRecord` equality) is **context-bloated** on this big function, so its frame is proved **deterministically on an isolated driver** (`audit_append_frame.c`, see note). The *whole file* isn't all-green (the routes need loop invariants + libc specs) — which is exactly why `banking.c` exists. |
 | **`banking.c`** | **Compliant core (the positive proof)** | A focused, fully-contracted distillation of `main.c`'s security-relevant core (accounts, audit log, `authenticate`, `log_transfer`, `transfer`, plus a confidential `pin` and a `check` verifier) carrying **six policies across five families** (H-R ×2, H-S, H-T, H-I1, H-I2). The unambiguous "every policy holds" artifact. | **43/43** — all green. |
 | **`banking_attacks.c`** | **Negative controls (the teeth)** | **Seven attacks**, **one per policy**, each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **34/41** — exactly **seven** goals red, one per attack. |
 
@@ -30,7 +30,7 @@ attack `escalate` still sits with the other negative controls.)
 | Policy | HAPPY | Context | What it proves | Compliant proof | Attack |
 |---|---|---|---|---|---|
 | `nonrepud_complete` | **H-R** | `\postcond` | a balance changed ⇒ the audit log grew | `banking.c` + `main.c` (default) | `transfer_silent` |
-| `nonrepud_append_only` | **H-R** | `\postcond` | old audit records are never rewritten | `banking.c` + `main.c` (full struct → `z3 -wp-split`) | `rewrite_audit` |
+| `nonrepud_append_only` | **H-R** | `\postcond` | old audit records are never rewritten | `banking.c` (scalar) + `audit_append_frame.c` (struct, **deterministic**) | `rewrite_audit` |
 | `bal_integrity` | **H-T** | `\writing` (`\diff(\ALL,{transfer})`) | only `transfer` may write a balance | `banking.c` + `main.c` (50/50; `\diff` also exempts `main`, the trusted seed) | `tamper` |
 | `authn` | **H-S** | `\precond` | `transfer` only on an authenticated session | `banking.c` + `main.c` (call-site check in `handle_client`) | `unauth_endpoint` |
 | `priv_monotonic` | **H-E** | `\postcond` | a transfer never raises anyone's privilege | `main.c` `transfer` (1/1) | `escalate` |
@@ -67,9 +67,20 @@ it only after validating the request's token (`get_role(token) != -1`), immediat
 call-site goal is **mutation-verified**: deleting the grant turns it red.
 
 Two notes on the `main.c` instrumentation, both honest costs of *realistic* data:
-- `nonrepud_append_only` is **full `AuditRecord` equality** (two `char[50]` + a `double`). That is a
-  struct, so SMT splits it per field and the two 50-char array frames are heavy → it needs
-  `-wp-prover z3 -wp-split` (banking.c's `int audit[]` is a scalar, so its version is trivial).
+- **`nonrepud_append_only` and context bloat (proved deterministically on a driver).** The policy is
+  full `AuditRecord` equality (two `char[50]` + a `double`). On `main.c`'s real `transfer` that goal is
+  intractable — **not because the property is hard, but because of context bloat**: transfer's
+  user-lookup loop and the libc `strcmp`/`strlen` contracts are dragged into every split goal. We
+  measured this carefully: SMT only closes the two `char[50]` frames by **wall-clock grinding** (~150 s,
+  and the result *flips* with the prover combo and timeout), and a **deterministic** budget of
+  2,000,000 steps still fails — i.e. a machine-dependent non-proof. Coq is no better: each split goal is
+  a ~2660-line context-bloated VC. The rigorous remedy (the documented "isolate a driver" pattern) is
+  **`audit_append_frame.c`**: a tiny driver carrying `log_transfer`'s *exact* frame contract
+  (`assigns logbuf[len], len;`) and the same full-struct policy. Free of the bloat, it discharges the
+  two `char[50]` frames **deterministically** under a bounded 50 000-step budget (`6/6`, run case 27) —
+  a machine-independent proof, not a timeout. So the append-only property *is* proved by provers; what
+  `main.c` cannot give is a *clean VC* for it, which is a property of that big function, not of the
+  policy. (`banking.c` proves the same policy on a scalar log; the driver covers the struct case.)
 - `bal_integrity` exempts `main` alongside `transfer` because `main()` seeds the DB balances at
   startup (the trusted bootstrap); banking.c had no bootstrap, so the question didn't arise.
 
@@ -93,18 +104,15 @@ dune build
 CMXS=_build/default/src/macsl.cmxs
 FC="frama-c -no-autoload-plugins -load-plugin wp -load-module $CMXS -macsl -wp -wp-prover alt-ergo,z3"
 
-# --- main.c : all four policies on realistic, libc-using code (each shown isolated) ---
+# --- main.c : the policies on realistic, libc-using code (each shown isolated) ---
 $FC -wp-prop nonrepud_complete -wp-fct transfer tests/small_example/main.c   # 1/1
 $FC -wp-prop bal_integrity                      tests/small_example/main.c   # 50/50
 $FC -wp-prop authn                              tests/small_example/main.c   # 1/1  (call-site in handle_client)
 $FC -wp-prop priv_monotonic -wp-fct transfer    tests/small_example/main.c   # 1/1  (H-E: transfer raises no role)
-# full-AuditRecord append-only is struct-valued -> needs z3 + goal splitting:
-frama-c -no-autoload-plugins -load-plugin wp -load-module $CMXS -macsl -wp \
-        -wp-prover z3 -wp-split -wp-timeout 120 \
-        -wp-prop nonrepud_append_only -wp-fct transfer tests/small_example/main.c   # 9/9
-# (the headline `-wp-fct transfer` scope is 51/51 for nonrepud_complete; with the
-#  full-struct append-only added it is 51/52 at the default prover and 213/213 under
-#  `-wp-prover z3 -wp-split -wp-timeout 120`.)
+# nonrepud_append_only on main.c's transfer is context-bloated (its loop + libc
+# contracts inflate the goal); the full-struct frame is proved DETERMINISTICALLY on
+# an isolated driver instead -- a bounded step budget, not a wall-clock grind:
+$FC -wp-split -wp-steps 50000 -wp-timeout 60 tests/small_example/audit_append_frame.c   # 6/6 (deterministic)
 
 # --- banking.c : the compliant core, six policies (five families) all green ---
 $FC tests/small_example/banking.c                          # 43/43

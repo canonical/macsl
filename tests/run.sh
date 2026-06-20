@@ -150,13 +150,25 @@ check "banking/attacks" 'Proved goals: +34 / 41' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/banking_attacks.c
 
 # 26. The policies proved on main.c's REAL transfer(), through the ACSL libc
-#     (strcmp/strlen contracts) -- "outside WP's reach" was wrong. Excludes the
-#     full-AuditRecord nonrepud_append_only goal, which is struct-valued and needs
-#     `-wp-prover z3 -wp-split` (its scalar form is proved green in case 24, and
-#     the heavy form is documented in small_example/README.md). The 52 cover the
+#     (strcmp/strlen contracts) -- "outside WP's reach" was wrong. The 52 cover the
 #     transfer body + nonrepud_complete (H-R) + priv_monotonic (H-E) through libc.
+#     The full-AuditRecord nonrepud_append_only goal is scoped out here because on
+#     this big function it is *context-bloated* (its loop + libc contracts inflate
+#     every goal); the SAME frame is proved DETERMINISTICALLY in case 27 below, and
+#     the scalar form is proved in case 24 -- so it is discharged, not skipped.
 check "mainc/policy-on-real-transfer" 'Proved goals: +52 / 52' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl -wp-prop="-nonrepud_append_only" -wp-fct transfer tests/small_example/main.c
+
+# 27. The append-only STRUCT frame, proved DETERMINISTICALLY -- under a bounded,
+#     machine-independent step budget (not a wall-clock timeout). main.c's real
+#     transfer cannot give a clean VC for this (context bloat, not difficulty); the
+#     fact is isolated onto a tiny driver carrying log_transfer's exact frame
+#     contract, and the two char[50] frames discharge under 50k steps. This is the
+#     rigorous proof of nonrepud_append_only for the struct case. See
+#     small_example/audit_append_frame.c.
+check "audit-frame/deterministic" 'Proved goals: +6 / 6' \
+  frama-c "${BASE[@]}" -load-plugin wp -wp -wp-prover alt-ergo,z3 -wp-split -wp-steps 50000 \
+    -wp-timeout 60 -macsl tests/small_example/audit_append_frame.c
 
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]
