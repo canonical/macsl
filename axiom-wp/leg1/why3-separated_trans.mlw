@@ -1,0 +1,29 @@
+(* Why3(separated_trans) — the GROUND TRUTH formula leg 1 must anchor to.
+   Extracted VERBATIM from WP's shipped Why3 memory theory:
+     $(frama-c -print-share-path)/wp/why3/frama_c_wp/memaddr.mlw
+   Frama-C 32.1 / Why3 1.8.2 (the `framac-coq8` switch). `addr` line 15;
+   `included` line 76; `separated` line 81; `lemma separated_trans` line 107.
+
+   This is `Why3(L)` in the spec's sense (frama-c-dual-tp-spec.md §4): the formula
+   WP actually emits/uses — independent of WP's Coq driver. Leg 1 proves
+   `Coq(separated_trans) <-> formula_rep <this>` against the Cohen-Johnson-Freyd
+   semantics. NOTE: the `[ ... ]` is an SMT trigger annotation — purely a prover
+   hint, semantically irrelevant; the denotation ignores it. *)
+
+type addr = { base : int ; offset : int }
+
+predicate included (p: addr) (lp: int) (q: addr) (lq: int) =
+  lp > 0 -> ( lq >= 0 /\ p.base = q.base
+                    /\ (q.offset <= p.offset)
+                    /\ (p.offset + lp <= q.offset + lq) )
+
+predicate separated (p: addr) (lp: int) (q: addr) (lq: int) =
+     lp <= 0 \/ lq <= 0
+  \/ p.base <> q.base
+  \/ q.offset + lq <= p.offset
+  \/ p.offset + lp <= q.offset
+
+lemma separated_trans:
+  forall p q r: addr. forall lp lq lr : int
+    [ included p lp q lq , separated q lq r lr ].
+  included p lp q lq -> separated q lq r lr -> separated p lp r lr

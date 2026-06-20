@@ -37,8 +37,22 @@ axiom set (what the `lean` skill's Quality Gate accepts). The spec's earlier "co
 (`by_cases`, `Int`), so `leanwp/check.sh` and `frama-c-dual-tp-spec.md §6` use the standard set and name it
 honestly. This is exactly the code-vs-doc alignment the PyCSL audit flagged — applied here from day one.
 
+## Leg 1 (semantic Why3↔Coq) — feasibility spike DONE for `separated_trans`
+See `leg1/`. Grounded findings: the verbatim `Why3(separated_trans)` is extracted
+(`leg1/why3-separated_trans.mlw`, from WP's `memaddr.mlw`) and the Why3/Coq/Lean
+statements are confirmed identical by inspection; **fragment coverage PASS**
+(in-fragment FOL); build path grounded — needs Rocq 9.x + `coq-equations` + the
+**full** `joscoh/why3-semantics` (the 3 vendored files are leaves), so leg 1 is a
+**separate Rocq-9 dev** (coqwp stays on Coq 8.20.1). The obligation proof is
+**not yet started** (blocked-by-effort; recipe in `leg1/README.md` §5). No green
+is claimed.
+
 ## Next (per spec §7)
-1. Build the `dualtp/` 3-way cross-check (extract Coq `Check` + Lean `#check` + Why3 task → shared IR →
-   canonicalize → structural `==`), **with its adversarial canonicalizer corpus** (spec §5.7) from the start.
-2. Flip `Memory.separated_trans` to **certified** once the 3-way passes in CI.
-3. Add Lean twins for the rest of `Memory.v` (10 lemmas), then `Vset.v`, then the `R`-based theories.
+1. **Leg 1:** execute `leg1/README.md` §5 — vendor+build the full semantics under
+   Rocq 9, write `⟦separated_trans⟧` + the bridge round-trip, prove the obligation.
+2. **Leg 2:** build the `dualtp/` Coq↔Lean cross-check (extract Coq `Check` + Lean
+   `#check` → shared IR → canonical `==`), **with its adversarial canonicalizer
+   corpus** (spec §5.7) from the start.
+3. Flip `Memory.separated_trans` to **certified** once both legs pass in CI.
+4. Add Lean twins for the rest of `Memory.v` (10 lemmas), then `Vset.v`, then the
+   `R`-based theories.
