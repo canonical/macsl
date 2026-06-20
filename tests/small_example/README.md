@@ -47,10 +47,17 @@ function's `loop variant`(s); bundled with `-wp-rte` it is the "never hangs, nev
 *every* input. The DoS attack `parse_request` (a crafted `len` driving a loop that fails to make progress)
 leaves its variant-decrease goal **red**. Scope (roadmap GH2): this bounds **WP-modelled loops** — not
 wall-clock, `malloc`, or OS/socket behaviour. `main.c`'s server accept-loop is **intentionally** infinite
-and carries `terminates \false;` (out of H-D scope by design); and H-D on `main.c`'s real `get_query_param`
-does **not** discharge — its `strtok`-based loop has no variant provable through Frama-C's coarse `strtok`
-contract (a *proof* limitation, not a DoS bug). Making it provable needs a strengthened `strtok` ghost
-contract; until then the crisp H-D lives on `banking.c`, the realistic parser is the honest gap.
+and carries `terminates \false;` (out of H-D scope by design).
+
+**The `strtok` parse-loop gap — found and fixed (`strtok_terminates.c`).** H-D on `main.c`'s real
+`get_query_param` does not discharge against Frama-C's *shipped* `strtok` contract: it ensures the saved
+pointer stays valid/same-base but **not that it strictly advances**, so the `while (token != NULL)` loop
+has no provable variant (a *proof* limitation, not a DoS bug). `strtok_terminates.c` resolves it: adding
+two **sound** `ensures` (advance-while-room; a non-NULL token ⇒ room remained — both true of real strtok)
+makes `\total` prove the parse loop terminates (**17/17**, run.sh case 29). To finish the *real*
+`get_query_param`, those two `ensures` belong on the libc `strtok` contract (libc-side measure
+`\offset(__fc_strtok_ptr)`) — a faithful upstream strengthening; until then the proof-of-fix lives in the
+isolated harness, exactly the `audit_append_frame.c` pattern.
 
 **On `priv_monotonic` (H-E).** Roles are `0`=super-admin … `2`=user, so a *smaller* number is *more*
 privilege and "no escalation" is the monotonicity law `role >= \old(role)`. It is scoped to `transfer`

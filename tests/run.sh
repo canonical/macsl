@@ -177,5 +177,13 @@ check "hd/availability-rte" 'Proved goals: +23 / 23' \
   frama-c "${BASE[@]}" "${WP[@]}" -wp-rte -macsl -wp-fct find_first_overdrawn \
     tests/small_example/banking.c
 
+# 29. H-D on a strtok parse loop — the get_query_param gap, isolated and FIXED.
+#     Frama-C's shipped strtok contract omits a strict-progress `ensures`, so a
+#     strtok loop has no provable variant. Adding the two SOUND ensures (advance-
+#     when-room; non-NULL-token-implies-room) lets \total prove termination (and
+#     -wp-rte the no-fault half). See small_example/strtok_terminates.c.
+check "hd/strtok-terminates" 'Proved goals: +17 / 17' \
+  frama-c "${BASE[@]}" "${WP[@]}" -wp-rte -macsl tests/small_example/strtok_terminates.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

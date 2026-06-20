@@ -61,13 +61,19 @@ UserAccount db[MAX_USERS];
    global (banking.c's `session_ok` pattern) is what makes the EXTERNAL capability
    expressible here.
 
-   H-D (Denial of service): NOT instrumented here. `main` carries `terminates
-   \false;` (its accept loop is intentionally infinite — out of H-D scope). H-D on
-   the real `get_query_param` does NOT discharge: its `strtok` loop has no variant
-   provable through Frama-C's coarse `strtok` contract (a *proof* limitation, not a
-   DoS bug — it terminates at runtime). Making it provable needs a strengthened
-   `strtok` ghost contract; until then the crisp H-D `availability` (`\context(\total)`)
-   lives on banking.c. See banking.c / banking_attacks.c, README.md and ../docs/usage.md. --- */
+   H-D (Denial of service): `main` carries `terminates \false;` (its accept loop is
+   intentionally infinite — out of H-D scope). H-D on the real `get_query_param`
+   does not discharge against Frama-C's SHIPPED `strtok` contract: that contract
+   ensures the saved pointer stays valid/same-base but NOT that it strictly
+   advances, so the loop has no provable variant (a *proof* limitation, not a DoS
+   bug). This gap is RESOLVED and proven in `strtok_terminates.c`: two SOUND extra
+   `ensures` (advance-while-room; a non-NULL token ⇒ room remained) make `\total`
+   prove the strtok parse-loop terminates (17/17). To finish the real
+   get_query_param, add those two `ensures` to the libc `strtok` contract (a
+   faithful upstream strengthening; the libc-side measure is `\offset(__fc_strtok_ptr)`)
+   and supply the variant + the loop's RTE invariants. The crisp H-D `availability`
+   (`\context(\total)`) is on banking.c. See banking.c / banking_attacks.c,
+   strtok_terminates.c, README.md and ../docs/usage.md. --- */
 typedef struct {
     char from[50];
     char to[50];
