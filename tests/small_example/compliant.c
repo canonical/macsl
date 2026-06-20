@@ -8,11 +8,11 @@
    snprintf/sscanf are handled by the Variadic plugin. A clean WP proof of
    main.c is a matter of loop invariants plus the coarse (assigns/\from,
    bounded-result) nature of those library specs -- effort, not impossibility.
-   banking.c is simply a crisp, fully-specified core that makes the policy
+   compliant.c is simply a crisp, fully-specified core that makes the policy
    demonstration unambiguous.
 
    This file is the COMPLIANT system: every policy holds (all goals proved).
-   banking_attacks.c is the matching set of negative controls. */
+   attacks.c is the matching set of negative controls. */
 
 #define NACC  8
 #define NLOG  1024

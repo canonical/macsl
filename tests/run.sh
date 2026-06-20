@@ -143,11 +143,11 @@ echo "== Worked example (small_example: all seven HAPPY families together) =="
 # 24. Compliant banking core: seven policies across six families (H-R x2, H-S, H-T,
 #     H-I1 read confinement, H-I2 noninterference, H-D availability/totality) all hold.
 check "banking/compliant" 'Proved goals: +63 / 63' \
-  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/banking.c
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/compliant.c
 
 # 25. Eight attacks, one per policy: exactly eight goals red.
 check "banking/attacks" 'Proved goals: +41 / 49' \
-  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/banking_attacks.c
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/attacks.c
 
 # 26. The policies proved on main.c's REAL transfer(), through the ACSL libc
 #     (strcmp/strlen contracts) -- "outside WP's reach" was wrong. The 52 cover the
@@ -175,7 +175,7 @@ check "audit-frame/deterministic" 'Proved goals: +6 / 6' \
 #     -wp-rte (never faults). The "never hangs, never crashes" theorem.
 check "hd/availability-rte" 'Proved goals: +23 / 23' \
   frama-c "${BASE[@]}" "${WP[@]}" -wp-rte -macsl -wp-fct find_first_overdrawn \
-    tests/small_example/banking.c
+    tests/small_example/compliant.c
 
 # 29. H-D on a strtok parse loop — the get_query_param gap, isolated and FIXED.
 #     Frama-C's shipped strtok contract omits a strict-progress `ensures`, so a

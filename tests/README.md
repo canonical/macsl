@@ -61,9 +61,9 @@ which clashes depending on load order. `run.sh` sidesteps that by running with
 ### `small_example/` — worked example (H-R + H-S + H-T on one system)
 | File | Role | Expected |
 |---|---|---|
-| `banking.c` | compliant banking core, all four policies | `18/18` |
-| `banking_attacks.c` | four attacks, one per policy | `25/29` (four red) |
-| `main.c` | the full HTTP example (now with `log_transfer`); libc is ACSL-specified, but we verify on `banking.c` for a crisp demo | — |
+| `compliant.c` | compliant banking core, all four policies | `18/18` |
+| `attacks.c` | four attacks, one per policy | `25/29` (four red) |
+| `main.c` | the full HTTP example (now with `log_transfer`); libc is ACSL-specified, but we verify on `compliant.c` for a crisp demo | — |
 
 See `small_example/README.md` for the policy↔attack table.
 

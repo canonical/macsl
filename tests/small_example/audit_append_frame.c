@@ -20,7 +20,7 @@
    proves it with a bounded (machine-independent) step budget, not a timeout. So
    the append-only property IS proved by provers; what main.c cannot give is a
    *clean* VC for the same fact, which is a context-bloat property of that
-   function, not of the policy. (banking.c proves the same policy on a scalar log;
+   function, not of the policy. (compliant.c proves the same policy on a scalar log;
    this driver covers the struct case.) */
 
 #define N 1024

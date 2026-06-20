@@ -15,12 +15,14 @@ works directly. Licence: LGPL-2.1 (inherited from MetAcsl).
 
 ## Status
 
-**All six STRIDE families** (Phases 0–5): `\context(\writing)` (**H-T**, write confinement),
-`\context(\reading)` (**H-I1**, read confinement), `\context(\postcond)` (**H-R**, audit-log
-completeness + append-only; **H-E**, privilege monotonicity via `\diff` gate exemption),
-`\context(\precond)` (**H-S**, check-before-use capabilities), and `\context(\noninterference)`
-(**H-I2**, noninterference via synthesized self-composition). Builds and is verified against
-**Frama-C 32.1 (Germanium)**; `./tests/run.sh` is green (23/23). The roadmap is in
+**All seven HAPPY policies — the full six STRIDE families** (Phases 0–6):
+`\context(\writing)` (**H-T**, write confinement), `\context(\reading)` (**H-I1**, read
+confinement), `\context(\postcond)` (**H-R**, audit-log completeness + append-only; **H-E**,
+privilege monotonicity via `\diff` gate exemption), `\context(\precond)` (**H-S**, check-before-use
+capabilities), `\context(\noninterference)` (**H-I2**, noninterference via synthesized
+self-composition), and `\context(\total)` (**H-D**, denial-of-service / totality: a `terminates`
+clause WP discharges from loop variants + an `-wp-rte` no-fault bundle). Builds and is verified
+against **Frama-C 32.1 (Germanium)**; `./tests/run.sh` is green (29/29). The roadmap is in
 [`happy-roadmap.md`](happy-roadmap.md); the design rationale is [`macsl-impl.md`](macsl-impl.md).
 
 A [flagship example](tests/small_example) is available.

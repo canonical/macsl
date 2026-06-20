@@ -37,7 +37,7 @@ UserAccount db[MAX_USERS];
      - H-R nonrepud_append_only: every earlier AuditRecord is unchanged (FULL
                                  struct equality). Needs `-wp-prover z3 -wp-split`
                                  because the record is a STRUCT (two char[50] + a
-                                 double), unlike banking.c's scalar `int audit[]`
+                                 double), unlike compliant.c's scalar `int audit[]`
                                  — a faithful realistic-data cost, not a weakness.
                                  [\targets transfer, \postcond]
      - H-T bal_integrity       : only transfer may write a balance — `main` is
@@ -58,7 +58,7 @@ UserAccount db[MAX_USERS];
    H-S originally did NOT fit: main.c folds authentication INTO transfer, and a
    file-level `happy \precond` cannot name transfer's `token` PARAMETER (WP:
    "unbound logic variable token"). Adding the request-scoped `session_authenticated`
-   global (banking.c's `session_ok` pattern) is what makes the EXTERNAL capability
+   global (compliant.c's `session_ok` pattern) is what makes the EXTERNAL capability
    expressible here.
 
    H-D (Denial of service): `main` carries `terminates \false;` (its accept loop is
@@ -72,7 +72,7 @@ UserAccount db[MAX_USERS];
    get_query_param, add those two `ensures` to the libc `strtok` contract (a
    faithful upstream strengthening; the libc-side measure is `\offset(__fc_strtok_ptr)`)
    and supply the variant + the loop's RTE invariants. The crisp H-D `availability`
-   (`\context(\total)`) is on banking.c. See banking.c / banking_attacks.c,
+   (`\context(\total)`) is on compliant.c. See compliant.c / attacks.c,
    strtok_terminates.c, README.md and ../docs/usage.md. --- */
 typedef struct {
     char from[50];
@@ -84,7 +84,7 @@ AuditRecord audit_log[1024];
 int audit_len = 0;
 
 /* H-S session capability (added so the EXTERNAL check-before-use policy `authn`
-   applies on main.c too, mirroring banking.c's `session_ok`). Request-scoped:
+   applies on main.c too, mirroring compliant.c's `session_ok`). Request-scoped:
    handle_client clears it and re-grants it only after validating the request's
    token, immediately before transfer -- a genuine check-before-use gate. */
 int session_authenticated = 0;
@@ -251,7 +251,7 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
 
 /* H-T integrity: only transfer may write an account balance. main is exempted
    alongside transfer because it is the trusted bootstrap that seeds the DB
-   (lines in main()) -- banking.c had no bootstrap, so the question didn't arise. */
+   (lines in main()) -- compliant.c had no bootstrap, so the question didn't arise. */
 /*@ happy \prop, \name("bal_integrity"),
       \targets(\diff(\ALL, {transfer, main})), \context(\writing),
       \separated(\written, &db[0 .. MAX_USERS - 1].balance);
@@ -259,8 +259,8 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
 
 /* H-S check-before-use (authn): transfer is reachable only once the caller holds
    the session capability -- granted in handle_client AFTER the request's token is
-   validated (get_role(token) != -1), and dropped otherwise. banking.c uses the
-   same pattern with `session_ok`; banking_attacks.c's `unauth_endpoint` (which
+   validated (get_role(token) != -1), and dropped otherwise. compliant.c uses the
+   same pattern with `session_ok`; attacks.c's `unauth_endpoint` (which
    calls transfer without granting it) shows the call-site check going red. */
 /*@ happy \prop, \name("authn"),
       \targets({transfer}), \context(\precond),
@@ -274,7 +274,7 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
    roadmap's stronger API-spanning form \diff(\ALL,{main}) is SMT-incomplete on
    main.c's libc-heavy routes (the trivial role-preservation goal drowns in
    strtok/strcmp context — timeout, not a refutation). The confused-deputy attack
-   (a helper that lowers a role) is the matching red in banking_attacks.c. */
+   (a helper that lowers a role) is the matching red in attacks.c. */
 /*@ happy \prop, \name("priv_monotonic"),
       \targets({transfer}), \context(\postcond),
       \forall integer i; 0 <= i < MAX_USERS ==> db[i].role >= \old(db[i].role);

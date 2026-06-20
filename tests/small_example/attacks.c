@@ -1,6 +1,6 @@
 /* Negative controls for the banking HAPPY policies: four attacks, each
    violating exactly one policy, each caught by `macsl -wp` (its goal red).
-   Compare banking.c (the compliant system, all green). */
+   Compare compliant.c (the compliant system, all green). */
 
 #define NACC  8
 #define NLOG  1024
