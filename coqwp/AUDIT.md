@@ -100,8 +100,26 @@ definitions **verbatim** from `Memory.v` and uses `lia`. Two strengths of result
   `int_of_addr_bijection`/`addr_of_int_bijection`/`addr_of_null` (realize the
   `addr ↔ Z` pair via a `Z ↔ nat` bijection + stdlib `Cantor`).
 
+## Hardening DONE: `Vset.v`'s 11 lemmas (see `Vset_hardened.v`)
+
+All 11 `(* Why3 goal *)` lemmas `Vset.v` leaves `Admitted` are proved in
+`Vset_hardened.v`. `Vset` declares *all* its set symbols abstract, so this is a
+**sound witness realization**: `set a := a -> bool` (a decidable-membership
+characteristic function; `singleton` uses `WhyType`'s decidable equality).
+Proving each lemma for this model shows `Vset`'s admitted axioms are
+consistent/satisfiable.
+
+`Print Assumptions`: **9 of 11 are "Closed under the global context"**; the two
+**set-equality** lemmas `union_empty` and `inter_empty` depend on
+`functional_extensionality` — a standard Coq axiom, and exactly what `Qedlib`
+itself assumes (`Hypothesis extensionality`, used by `farray_eq`). No other axiom
+appears. `check.sh` whitelists `functional_extensionality` for `Vset` only.
+
 ## Hardening roadmap (remaining)
 1. ~~`Memory.v` (11)~~ **done** (`Memory_hardened.v`, axiom-free).
-2. `Vset.v` (11) and the float lemmas (`Cfloat.v`, 32).
-3. CI check: `coqc` `Memory_hardened.v` + assert `Print Assumptions` stays
-   "Closed under the global context" (no regression of the proved set).
+2. ~~`Vset.v` (11)~~ **done** (`Vset_hardened.v`; 9 axiom-free, 2 via
+   `functional_extensionality`).
+3. The float lemmas (`Cfloat.v`, 32) and `ArcTrigo.v` (2), `ExpLog.v` (1).
+4. CI: run `./check.sh` — it asserts each lemma is `Closed under the global
+   context` or (Vset only) depends solely on the whitelisted
+   `functional_extensionality`; no regression of the proved set.
