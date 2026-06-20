@@ -15,3 +15,5 @@ _build/
 *.vos
 *.glob
 .*.aux
+.lia.cache
+.nia.cache
