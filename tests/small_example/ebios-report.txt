@@ -1,0 +1,86 @@
+# EBIOS RM report — Lightweight core-banking HTTP backend
+
+Scope statement: this study covers a single-port, single-threaded core-banking HTTP backend offering authentication, role lookup, and fund-transfer operations to registered customers and staff, under role-based access control with a tamper-evident audit trail.
+Security-baseline note: standard cyber-hygiene is assumed in place (hardened hosting, transport protection, patching, backups, time sync, operator vetting); accidental and environmental risks (power loss, hardware failure, operator slips, the volatile-storage reset on restart) live in this baseline and are NOT modelled as scenarios below.
+Method: this report applies ANSSI's EBIOS Risk Manager (EBIOS RM) method; only Workshops 1–4 are authored here. The cryptographic strength of the identity primitive (password matching, token randomness) is a trusted boundary and is not analysed; the study concerns the discipline around it.
+
+## Workshop 1 — Scope & Security Baseline
+
+Business assets: BA1 customer and staff funds held in the ledger; BA2 integrity and correctness of account balances; BA3 the access-control discipline that binds each operation to an authorised clearance tier; BA4 confidentiality and validity of session identity (the live association of a token to its holder); BA5 the tamper-evident, append-only audit trail (non-repudiation of transfers); BA6 continuous availability of the online banking service; BA7 confidentiality of customers' credentials; BA8 trustworthiness of the bootstrapped account set at service start; BA9 monotonicity and correctness of clearance assignment (no operation may raise a holder's privilege tier).
+
+Supporting assets: SA1 the authentication operation that validates credentials and issues a session token; SA2 the server-side session-token store that records issued tokens and their holders; SA3 the role-lookup operation that returns a holder's clearance level; SA4 the transfer operation with its authorization-ordering logic (registration, positivity, own-account restriction, sufficient-funds check); SA5 the in-memory account and balance ledger; SA6 the append-only audit-trail store; SA7 the request-line and query-string parameter parser with its fixed compile-time buffers; SA8 the single-threaded accept-and-dispatch loop and path router; SA9 the clearance-comparison logic that ranks a holder's role number against the tier an operation requires (smaller number more privileged).
+
+Feared events:
+- FE1 funds moved out of an account without the mover holding the required clearance (privilege bypass on transfer) — severity G4
+- FE2 a customer debits an account that is not their own (own-account restriction defeated) — severity G4
+- FE3 account balances corrupted: funds created, destroyed, or moved with a non-positive or out-of-range amount — severity G4
+- FE4 a request authorised under a token that does not identify a genuine registered holder (identity-binding failure) — severity G3
+- FE5 a successful transfer leaves no audit record, a duplicate record, or alters an earlier record (loss of non-repudiation / append-only guarantee) — severity G3
+- FE6 disclosure of another holder's clearance level or session identity via role lookup or token handling — severity G2
+- FE7 service made unavailable so no client can be served (accept loop wedged or crashed) — severity G3
+- FE8 customer credentials disclosed during authentication handling — severity G3
+- FE9 a holder's clearance tier is raised by an operation (a User becoming Admin or Super-Admin, a role number lowered) — privilege escalation / role-monotonicity violation; the "smaller number more privileged" direction makes a clearance-comparison-direction error a direct escalation path — severity G4
+- FE10 silent audit saturation: once the fixed audit-trail capacity is reached, transfers keep succeeding but stop being recorded, converting a capacity exhaustion into a permanent, undetected non-repudiation hole — severity G4
+- FE11 session identity spoofed by token reuse or leakage: an issued token is accepted indefinitely with no expiry or revocation, or is exposed (e.g. carried in the query string and captured in proxy/server logs or browser history) and replayed, letting an attacker impersonate the legitimate holder — distinct from FE4 identity-binding — severity G3
+
+## Workshop 2 — Risk Origins
+
+- RO1 / TO1: a registered ordinary customer (insider, low privilege) seeking to move funds out of accounts they do not own or beyond their entitlement.
+- RO2 / TO2: an unauthenticated remote attacker seeking to perform privileged banking operations without holding a valid identity or clearance.
+- RO3 / TO3: a fraudster seeking to corrupt the ledger (create or destroy value) by driving transfers with malformed or out-of-range amounts.
+- RO4 / TO4: a repudiating insider seeking to perform a transfer while leaving no faithful, immutable audit record of it.
+- RO5 / TO5: a denial-of-service actor seeking to take the banking service offline for all customers.
+- RO6 / TO6: a curious or competing insider seeking to harvest other holders' identity, clearance, or credential information.
+- RO7 / TO7: a malicious privileged insider (a trusted Admin holding the legitimate "move funds from any account" power) seeking both to abuse that power for illicit transfers AND to escalate their own or an accomplice's clearance and cover their tracks by defeating the audit trail; as the dominant risk origin for an RBAC banking system, this insider couples abuse of granted authority with privilege escalation and non-repudiation defeat.
+
+## Workshop 3 — Strategic Scenarios
+
+- SS1: RO1/TO1 reaches FE2 via SA4 — severity G4 — attack path AP1.
+- SS2: RO2/TO2 reaches FE1 and FE4 via SA2 and SA4 — severity G4 — attack path AP2.
+- SS3: RO3/TO3 reaches FE3 via SA4 and SA5 — severity G4 — attack path AP3.
+- SS4: RO4/TO4 reaches FE5 via SA6 — severity G3 — attack path AP4.
+- SS5: RO5/TO5 reaches FE7 via SA7 and SA8 — severity G3 — attack path AP5.
+- SS6: RO6/TO6 reaches FE6 and FE8 via SA3 and SA1 — severity G3 — attack path AP6.
+- SS7: RO7/TO7 reaches FE9 via SA4 and SA9 — a malicious privileged insider (or a customer exploiting a clearance-comparison-direction error) drives an operation that raises a holder's tier, lowering a role number to gain Admin or Super-Admin standing — severity G4 — attack path AP7.
+- SS8: RO7/TO7 reaches FE10 via SA6 and SA4 — a privileged insider abuses the granted "move from any account" power while driving the audit trail to its fixed capacity so that subsequent illicit transfers succeed yet go unrecorded — severity G4 — attack path AP8.
+- SS9: RO2/TO2 reaches FE11 via SA2 and SA1 — an attacker captures or replays a leaked or never-expiring issued token to impersonate a legitimate holder and act under their identity — severity G3 — attack path AP9.
+
+## Workshop 4 — Operational Scenarios
+
+- OS1: AP1 on the transfer-operation interface — a User-tier caller submits a transfer naming a source account that is not their own and observes whether the own-account restriction is enforced before the debit — covers FE2, SS1 — likelihood V2.
+- OS2: AP2 on the session-token store and transfer interface — a caller presents a fabricated, expired, or non-issued token and issues a transfer to see whether an unregistered identity is accepted as authorised — covers FE1 and FE4, SS2 — likelihood V2.
+- OS3: AP3 on the transfer-operation interface — the attacker submits transfers with a zero, negative, or boundary-exceeding amount, or a source lacking sufficient funds, probing whether the positivity and sufficient-funds checks hold against the ledger — covers FE3, SS3 — likelihood V2.
+- OS4: AP4 on the audit-trail interface — an insider performs many successful transfers up to and beyond the fixed audit-trail capacity to force a missing, overwritten, or altered earlier record — covers FE5, SS4 — likelihood V2.
+- OS5: AP5 on the parameter-parser interface — the attacker sends oversized request lines, missing or malformed parameters, and unknown paths to wedge or crash the single-threaded accept loop and deny service to all clients — covers FE7, SS5 — likelihood V3.
+- OS6: AP6 on the role-lookup and authentication interfaces — the attacker queries clearance for tokens or holders other than their own and probes authentication responses to infer credential or identity information — covers FE6 and FE8, SS6 — likelihood V2.
+- OS7: AP7 on the transfer-operation and clearance-comparison interfaces — a caller drives an operation aiming to raise their own or an accomplice's clearance (lower the role number) and observes whether role monotonicity holds and whether the clearance comparison is evaluated in the correct direction so that no operation grants a more-privileged tier — covers FE9, SS7 — likelihood V2.
+- OS8: AP8 on the audit-trail and transfer interfaces — a privileged insider first fills the audit trail to its fixed capacity, then performs further transfers to observe whether transfers keep succeeding while recording silently stops, leaving an undetected non-repudiation hole — covers FE10, SS8 — likelihood V2.
+- OS9: AP9 on the session-token store and authentication interfaces — the attacker presents a previously issued token after intended use, or one captured from where it is exposed, to test whether tokens expire or can be revoked and whether replay is accepted as the legitimate holder — covers FE11, SS9 — likelihood V2.
+
+## Workshop 5 — (not authored here)
+
+Workshop 5 (risk treatment + residual-risk acceptance) is NOT authored in this deliverable. It is fed downstream by the verification verdicts that consume W1–W4 (the EBIOS feedback loop: discharged / refuted security properties map back to the strategic and operational scenarios above), and the residual risk is then adjudicated and accepted by the risk owner.
+
+---
+
+## Provenance & assurance status (ebios-sl loop)
+
+This report was produced by the `ebios-sl` code-disjoint squeeze loop (config/skills/ebios-sl), whose
+load-bearing invariant is that the **scenario author is barriered from the implementation**: W1–W4 were
+authored solely from the mission / threat model (the functional intent of `specification.md` §1–5), never
+from the implementation source. A **disjoint completeness/realism reviewer** — also code-blind — produced
+an independent threat enumeration; its coverage gaps (privilege escalation FE9, silent audit saturation
+FE10, token reuse/leakage spoofing FE11, the malicious-privileged-insider risk origin RO7) were folded
+back in one amendment round. The §6 HAPPY-policy list of `specification.md` was deliberately withheld from
+both actors so the scenarios are an exogenous reading of the *threat*, not a mirror of the existing
+verification — the overlap between this report and those policies is therefore a *validation*, not a
+circular input.
+
+- **MACHINE-DONE (Gate B):** `./ebios-lint.sh macsl/tests/small_example/ebios-report.txt` — structure +
+  coverage + endogeneity tripwire green. (Run it to reproduce.)
+- **DEPENDENCY: human reviewer (Gate C realism + terminus).** Content realism/completeness has no machine
+  oracle. The disjoint reviewer's critique was applied, but final **realism sign-off and risk-owner
+  acceptance of residual risk are a human terminus** — they are *not* faked here. The study is
+  MACHINE-DONE; it is **DONE only when the risk owner signs**.
+- **Scales:** severity G1–G4, likelihood V1–V4, per ANSSI's EBIOS RM (4/4/3). Method attributed to ANSSI
+  / Club EBIOS.

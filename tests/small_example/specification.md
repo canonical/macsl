@@ -11,7 +11,7 @@ distillation of this core; `attacks.c` is the matching set of violations. See `R
 ## 1. System Overview
 
 A lightweight, single-threaded monolithic service combining a POSIX HTTP/1.1 server engine
-with an in-memory role-based access control (RBAC) ledger. It exposes core banking operations
+with an in-memory Role-Based Access Control (RBAC) ledger. It exposes core banking operations
 over HTTP, handling authentication, authorization, and accounting through query-string
 parameters and JSON responses. Every balance-changing operation is recorded in an append-only
 audit log (non-repudiation).
@@ -130,7 +130,7 @@ code; all seven are exercised across this directory (see `compliant.c`/`attacks.
 | 6 | **H-D** (availability) | the server accept loop is intentionally non-terminating (`terminates \false;`); per-request totality is bounded — `get_query_param`'s `strtok` loop termination needs a strengthened `strtok` contract (see `strtok_terminates.c`) |
 | 7 | **H-I1 / H-I2** (confidentiality / non-interference) | demonstrated on `compliant.c` (password/secret confinement + non-interference), which `main.c`'s string-pointer model cannot host directly |
 
-**Trusted boundary (EBIOS GH1).** The identity check itself (matching `username`/`password`, and
+**Trusted boundary** The identity check itself (matching `username`/`password`, and
 the cryptographic strength of a real token) is the trusted boundary; macsl proves the *discipline*
 around it (check-before-use, log-completeness, monotonicity, write/read confinement), not the
 identity primitive. See `README.md` for the green (`compliant.c`) / red (`attacks.c`) controls and

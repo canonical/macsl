@@ -8,6 +8,10 @@ policies that secure it. This is the **flagship example** for `macsl`: it shows 
 are split across three `.c` files on purpose —
 each is load-bearing; none is redundant.
 
+The [EBIOS RM risk report](ebios-report.txt) for the core-banking server, was authored by a code-blind
+agent from the spec's mission alone and hardened by a disjoint code-blind reviewer, leaving only human
+risk-owner sign-off outstanding.
+
 ## The three files and their roles
 
 | File | Role | What it is | `macsl -wp` result |
