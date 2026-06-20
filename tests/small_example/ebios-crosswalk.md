@@ -30,16 +30,16 @@ threat model the EBIOS study independently derived?*
 | **FE8** credential disclosure · **G3** | SS6/OS6 · V2 · Moderate | H-I1 confidentiality → `compliant.c` | **63/63** (hard) | 🟡 verified on `compliant.c`, not on `main.c` |
 | **FE9** privilege escalation (role raised) · **G4** | SS7/OS7 · V2 · **High** | H-E `priv_monotonic` (`role >= \old`) → `main.c::transfer` | **52/52** (hard) | ✅ **verified on `main.c`** — the escalation gap the EBIOS reviewer caught is closed in code |
 | **FE10** silent audit saturation · **G4** | SS8/OS8 · V2 · **High** | H-R `nonrepud_atcap` → `audit_saturation.c` (+ `main.c` fail-closed guard) | **13/13** + red `transfer_unlogged_atcap` (hard) | ✅ **now closed** — fail-closed: a transfer that cannot be recorded refuses, so completeness holds even at a full log; `main.c`'s real `transfer` carries the guard (case 26 → 53/53) |
-| **FE11** token reuse / leakage spoofing · **G3** | SS9/OS9 · V2 · Moderate | — (trusted boundary) | not modeled | ⚠️ **GAP** — token expiry/revocation + query-string leakage are the declared trusted boundary; macsl proves the *discipline*, not the token lifecycle |
+| **FE11** token reuse / leakage spoofing · **G3** | SS9/OS9 · V2 · Moderate | H-S `token_live` → `token_lifecycle.c` (discipline half) | **8/8** + red `replay_endpoint` (hard) | 🟡 **discipline closed** — a revoked/expired/replayed token cannot authorize an op; token *unguessability* + the expiry *clock* remain the trusted boundary (spec §6) — accepted residual |
 
 ## 2. Verdict — does `main.c` match the EBIOS report?
 
-**Largely yes — FE2 and FE10 now closed, one honest residual remains.** Of 11 feared events, the EBIOS
-threat model (derived code-blind) and the verification align well: the high-value money/identity events
-verified directly on `main.c`'s real `transfer` (FE1, FE3, FE4, FE5, FE9 — **53/53**), and the
-confidentiality + availability families on the flagship's companion drivers. Notably **FE9 (privilege
-escalation)** — the gap the disjoint EBIOS reviewer independently caught — *is* discharged on `main.c`
-by `priv_monotonic`, a clean cross-validation of the loop.
+**Yes — all three flagged gaps now remediated; the only residual is an irreducible trusted boundary.**
+Of 11 feared events, the EBIOS threat model (derived code-blind) and the verification align well: the
+high-value money/identity events verified directly on `main.c`'s real `transfer` (FE1, FE3, FE4, FE5,
+FE9 — **53/53**), and the confidentiality + availability families on the flagship's companion drivers.
+Notably **FE9 (privilege escalation)** — the gap the disjoint EBIOS reviewer independently caught — *is*
+discharged on `main.c` by `priv_monotonic`, a clean cross-validation of the loop.
 
 **FE2 closed.** The horizontal-RBAC gap is now a verified hyperproperty `rbac_own_account` (H-E
 horizontal): *a role-2 caller decreases no account but its own*. Proved deterministically on the clean
@@ -54,9 +54,18 @@ balance changed ⇒ the log grew" holds even when the log may be full (precondit
 carries the fail-closed guard (`if (audit_len >= 1024) return -1;`, case 26 → **53/53**) as the runtime
 fix; the at-capacity theorem lives on the driver (the string-keyed form context-bloats).
 
-### Residual risk (citable to its EBIOS scenario ID — for W5 treatment)
-1. **FE11 / SS9 (G3, Moderate) — token lifecycle.** Expiry/revocation/leakage sit on the declared
-   trusted boundary; honest scope limit, not a defect — record as accepted residual or extend scope.
+**FE11 — discipline half closed.** The lifecycle discipline (a revoked/expired/replayed token must not
+authorize an operation) is now the verified policy `token_live` (H-S): an op runs only against a
+currently-valid token. Proved on `token_lifecycle.c` (**8/8**) with the replay control `replay_endpoint`.
+`main.c` needs no new code — its `authn` already binds the capability to live validity via the
+request-time `get_role(token) != -1` lookup.
+
+### Residual risk (the irreducible trusted boundary — for W5 acceptance, not treatment)
+1. **FE11 / SS9 (G3, Moderate) — token *strength* + *expiry clock*.** Token unguessability and the
+   wall-clock expiry timer are the cryptographic primitive (spec §6 trusted boundary); macsl proves the
+   *discipline* around it, not the primitive. This is an **accepted residual** the risk owner signs (the
+   human terminus) — not a code defect. A production build replaces the mock token with an opaque,
+   expiring, revocable credential.
 
 ### Plane-limited coverage (verified, but not on `main.c` itself)
 - **FE6, FE8 (confidentiality)** and **FE7 (per-request totality)** are verified on `compliant.c` /

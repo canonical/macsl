@@ -13,6 +13,7 @@ int role[NACC];         /* privilege level: 0 = super-admin .. 2 = user (smaller
 int pin[NACC];          /* H-I1: confidential per-account PIN */
 int leak_sink = 0;      /* a public sink an attacker exfiltrates into */
 int caller_acct = 0;    /* request-scoped caller account (see rbac_horizontal.c) */
+int token_active = 0;   /* FE11 token lifecycle: 1 = valid (see token_lifecycle.c) */
 
 /*@ assigns session_ok; ensures \result != 0 ==> session_ok == 1; */
 int authenticate(int user, int pass);
@@ -199,4 +200,24 @@ int transfer_unlogged_atcap(int from, int to, int amount)
       \targets({transfer_unlogged_atcap}), \context(\postcond),
       (\exists integer i; 0 <= i < NACC && balance[i] != \old(balance[i]))
         ==> audit_len > \old(audit_len);
+*/
+
+/* ATTACK 11 — H-S token lifecycle (FE11, replay of a revoked/expired token): a
+   handler that authorizes a protected operation WITHOUT re-checking the token is
+   still valid -- it acts on a once-issued (now possibly revoked or expired) token.
+   The token_live precond (token_active == 1 at the call site) goes red. The
+   verified form of "a stale session token still moved money." Compliant
+   counterpart: token_lifecycle.c's liveness-checked handler. */
+/*@ requires 0 <= from < NACC && 0 <= to < NACC;
+    assigns balance[from], balance[to]; */
+void protected_op(int from, int to, int amount) { balance[from] -= amount; balance[to] += amount; }
+
+/*@ requires 0 <= from < NACC && 0 <= to < NACC; */
+void replay_endpoint(int from, int to, int amount)
+{
+  protected_op(from, to, amount);   /* no liveness check -> token_live precond red */
+}
+/*@ happy \prop, \name("token_live"),
+      \targets({protected_op}), \context(\precond),
+      token_active == 1;
 */
