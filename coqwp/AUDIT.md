@@ -115,11 +115,34 @@ consistent/satisfiable.
 itself assumes (`Hypothesis extensionality`, used by `farray_eq`). No other axiom
 appears. `check.sh` whitelists `functional_extensionality` for `Vset` only.
 
+## Hardening DONE: `Cfloat.v`'s 32 lemmas (see `Cfloat_hardened.v`)
+
+All 32 `(* Why3 goal *)` lemmas `Cfloat.v` leaves `Admitted` are proved in
+`Cfloat_hardened.v`. `Cfloat` declares *all* its float symbols abstract, so this
+is a **sound witness realization**: model both `f32` and `f64` as `R`, with
+`of_f` = identity, `to_f` = **clamp into `[-max, max]`**, arithmetic ops =
+`to_f (real op)`, comparisons via `Rle_dec`/`Rlt_dec`/`Req_EM_T`, and `classify`
+returning `Finite` iff the value is in the finite range (the exact ±max
+constants from `Cfloat.v`). Proving each lemma for this model shows `Cfloat`'s
+admitted axioms are consistent/satisfiable.
+
+**Axiom status is different here, and unavoidably so:** Coq's `R` is *itself*
+axiomatized, so no `R`-lemma can be "Closed under the global context". The 32
+lemmas depend on **exactly two standard Coq axioms** and nothing else —
+`ClassicalDedekindReals.sig_forall_dec` (the axiom Coq's reals are built on,
+pulled in by `Rle_dec`/`Req_EM_T` and the `%R` literals) and
+`functional_extensionality_dep`. There are **no admits and no custom axioms**.
+`check.sh` whitelists those two for `Cfloat` only and fails on any other axiom.
+
 ## Hardening roadmap (remaining)
 1. ~~`Memory.v` (11)~~ **done** (`Memory_hardened.v`, axiom-free).
 2. ~~`Vset.v` (11)~~ **done** (`Vset_hardened.v`; 9 axiom-free, 2 via
    `functional_extensionality`).
-3. The float lemmas (`Cfloat.v`, 32) and `ArcTrigo.v` (2), `ExpLog.v` (1).
-4. CI: run `./check.sh` — it asserts each lemma is `Closed under the global
-   context` or (Vset only) depends solely on the whitelisted
-   `functional_extensionality`; no regression of the proved set.
+3. ~~`Cfloat.v` (32)~~ **done** (`Cfloat_hardened.v`; no admits/custom axioms,
+   only the 2 standard Reals axioms). Remaining: `ArcTrigo.v` (2), `ExpLog.v` (1)
+   — also `R`-based, so expect the same standard-Reals-axiom footing.
+4. CI: run `./check.sh` — per file it asserts no `Admitted`/`admit`, compiles,
+   and every lemma is `Closed under the global context` or depends solely on that
+   file's whitelisted standard axioms (Memory: none; Vset:
+   `functional_extensionality`; Cfloat: `functional_extensionality` +
+   `sig_forall_dec`). No regression of the proved set.
