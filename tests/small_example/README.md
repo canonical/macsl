@@ -10,7 +10,7 @@ on purpose — each is load-bearing; none is redundant.
 
 | File | Role | What it is | `macsl -wp` result |
 |---|---|---|---|
-| **`main.c`** | **Realistic integration** | A full HTTP server (three routes) using real libc — `strtok`/`strcmp`/`strncpy`, `read`/`write`, `socket`/`accept`, variadic `snprintf`/`sscanf` — carrying the audit log + `log_transfer`. The H-R `nonrepud_complete` policy is checked on its **real `transfer()`**. | `transfer` **51/51** (the policy postcondition discharged *through* Frama-C's ACSL libc + a loop invariant + `log_transfer`'s contract). `log_transfer` body 68/69 — one open `valid_read_nstring` strncpy-frame goal, Coq-escalable. |
+| **`main.c`** | **Realistic integration** | A full HTTP server (three routes) using real libc — `strtok`/`strcmp`/`strncpy`, `read`/`write`, `socket`/`accept`, variadic `snprintf`/`sscanf` — carrying the audit log + `log_transfer`. **Three of the four policies are instrumented here on the real code** (H-R `nonrepud_complete`, H-R `nonrepud_append_only`, H-T `bal_integrity`); H-S `authn` does not fit (see note). | `nonrepud_complete` **1/1** on `transfer` (part of the 51/51 transfer scope); `nonrepud_append_only` **proves with `-wp-prover z3 -wp-split`** (full `AuditRecord` equality — a struct, not a scalar); `bal_integrity` **47/47** across the six non-exempt functions. The *whole file* isn't all-green (the routes need loop invariants + libc specs) — which is exactly why `banking.c` exists. |
 | **`banking.c`** | **Compliant core (the positive proof)** | A focused, fully-contracted distillation of `main.c`'s security-relevant core (accounts, audit log, `authenticate`, `log_transfer`, `transfer`) carrying **all four policies**. The unambiguous "every policy holds" artifact. | **18/18** — all green. |
 | **`banking_attacks.c`** | **Negative controls (the teeth)** | Four attacks, **one per policy**, each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **25/29** — exactly **four** goals red, one per attack. |
 
@@ -22,18 +22,33 @@ violations by design. `banking.c` + `banking_attacks.c` are a **matched complian
 `#define`s, same policy text); the contrast between 18/18 green and four targeted reds is the actual
 assurance argument. Collapsing them would either lose the crisp green control or lose the teeth.
 
-## The policies (proved in `banking.c`, exercised on `main.c`'s real `transfer` for H-R)
+## The policies (all four proved in `banking.c`; three also instrumented on `main.c`)
 
-| Policy | STRIDE / HAPPY | Context | What it proves |
-|---|---|---|---|
-| `nonrepud_complete` | **H-R** (Repudiation) | `\postcond` | a balance changed ⇒ the audit log grew |
-| `nonrepud_append_only` | **H-R** (Repudiation) | `\postcond` | old audit records are never rewritten |
-| `authn` | **H-S** (Spoofing) | `\precond` | `transfer` is callable only on an authenticated session |
-| `bal_integrity` | **H-T** (Tampering) | `\writing` (`\diff(\ALL,{transfer})`) | only `transfer` may write a balance |
+| Policy | HAPPY | Context | What it proves | On `main.c`? |
+|---|---|---|---|---|
+| `nonrepud_complete` | **H-R** | `\postcond` | a balance changed ⇒ the audit log grew | ✅ `transfer` (default prover) |
+| `nonrepud_append_only` | **H-R** | `\postcond` | old audit records are never rewritten | ✅ `transfer` (full struct → `z3 -wp-split`) |
+| `bal_integrity` | **H-T** | `\writing` (`\diff(\ALL,{transfer})`) | only `transfer` may write a balance | ✅ 47/47 (`\diff` also exempts `main`, the trusted seed) |
+| `authn` | **H-S** | `\precond` | `transfer` only on an authenticated session | ❌ banking-only — see note |
 
 These four cover three of the six HAPPY families (**H-T, H-R, H-S**). The remaining three — **H-I1**
 (read confinement), **H-E** (privilege monotonicity), **H-I2** (noninterference) — are specified in
 `../../happy-roadmap.md`, not in this directory.
+
+**Why `authn` is banking-only.** H-S is an *external* check-before-use capability keyed on a session
+**global** (banking.c's `session_ok`, set before `transfer` is reached). `main.c` instead folds
+authentication **into** `transfer` (it self-validates the token and returns `-1` on `caller_idx == -1`),
+so there is no session global to name — and a file-level `happy \precond` **cannot reference
+`transfer`'s `token` parameter** (WP rejects it: *"unbound logic variable token"*). Adding H-S to
+`main.c` would require refactoring it to an external-session design (a change to executable C); the
+policy is demonstrated instead on `banking.c` (green) and `banking_attacks.c` (`unauth_endpoint` red).
+
+Two notes on the `main.c` instrumentation, both honest costs of *realistic* data:
+- `nonrepud_append_only` is **full `AuditRecord` equality** (two `char[50]` + a `double`). That is a
+  struct, so SMT splits it per field and the two 50-char array frames are heavy → it needs
+  `-wp-prover z3 -wp-split` (banking.c's `int audit[]` is a scalar, so its version is trivial).
+- `bal_integrity` exempts `main` alongside `transfer` because `main()` seeds the DB balances at
+  startup (the trusted bootstrap); banking.c had no bootstrap, so the question didn't arise.
 
 ## The four attacks (caught in `banking_attacks.c`)
 
@@ -52,15 +67,24 @@ dune build
 CMXS=_build/default/src/macsl.cmxs
 FC="frama-c -no-autoload-plugins -load-plugin wp -load-module $CMXS -macsl -wp -wp-prover alt-ergo,z3"
 
-# Realistic integration: the H-R policy on main.c's real transfer()
-$FC -wp-fct transfer tests/small_example/main.c            # 51/51
+# --- main.c : three policies on realistic, libc-using code (each shown isolated) ---
+$FC -wp-prop nonrepud_complete -wp-fct transfer tests/small_example/main.c   # 1/1
+$FC -wp-prop bal_integrity                      tests/small_example/main.c   # 47/47
+# full-AuditRecord append-only is struct-valued -> needs z3 + goal splitting:
+frama-c -no-autoload-plugins -load-plugin wp -load-module $CMXS -macsl -wp \
+        -wp-prover z3 -wp-split -wp-timeout 120 \
+        -wp-prop nonrepud_append_only -wp-fct transfer tests/small_example/main.c   # 9/9
+# (the headline `-wp-fct transfer` scope is 51/51 for nonrepud_complete; with the
+#  full-struct append-only added it is 51/52 at the default prover and 213/213 under
+#  `-wp-prover z3 -wp-split -wp-timeout 120`.)
 
-# Compliant core: all four policies hold
+# --- banking.c : the compliant core, all four policies green ---
 $FC tests/small_example/banking.c                          # 18/18
 
-# Negative controls: exactly four goals red (one per policy)
+# --- banking_attacks.c : negative controls, exactly four goals red ---
 $FC tests/small_example/banking_attacks.c                  # 25/29
 ```
 
 (`banking.c` / `banking_attacks.c` are also cases 24–25 in `../run.sh`. The `main.c` proof-status
-detail — including the one Coq-escalable goal — is documented in the header of `main.c` itself.)
+detail — including the one Coq-escalable `valid_read_nstring` goal on `log_transfer`'s body — is
+documented in the header of `main.c` itself.)

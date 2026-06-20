@@ -24,18 +24,32 @@ typedef struct {
 UserAccount db[MAX_USERS];
 
 /* --- Audit log (non-repudiation). Every balance-changing transfer appends one
-   record here; old records are never overwritten. The HAPPY policies that make
-   this a machine-checked guarantee are demonstrated on the focused, fully-
-   specified core `banking.c`. (This file's libc calls -- strtok/strcmp/strncpy,
-   read/write, socket/accept -- ARE specified by Frama-C's ACSL libc, and the
-   variadic snprintf/sscanf go through the Variadic plugin; a clean WP proof of
-   the whole file is a matter of loop invariants + those coarse library specs,
-   not impossibility.) The policies:
-     - H-R nonrepud_complete   : balance changed  ==> audit_len grew
-     - H-R nonrepud_append_only: \forall i<old(audit_len); audit[i] unchanged
-     - H-S authn               : transfer requires an authenticated session
-     - H-T bal_integrity       : only transfer may write a balance
-   See banking.c / banking_attacks.c and ../docs/usage.md. --- */
+   record here; old records are never overwritten. (This file's libc calls --
+   strtok/strcmp/strncpy, read/write, socket/accept -- ARE specified by Frama-C's
+   ACSL libc, and the variadic snprintf/sscanf go through the Variadic plugin; a
+   clean WP proof of the whole file is a matter of loop invariants + those coarse
+   library specs, not impossibility.)
+
+   THREE of the four banking policies are instrumented ON THIS FILE (verified):
+     - H-R nonrepud_complete   : a balance changed ==> audit_len grew
+                                 [\targets transfer, \postcond — proves at default]
+     - H-R nonrepud_append_only: every earlier AuditRecord is unchanged (FULL
+                                 struct equality). Needs `-wp-prover z3 -wp-split`
+                                 because the record is a STRUCT (two char[50] + a
+                                 double), unlike banking.c's scalar `int audit[]`
+                                 — a faithful realistic-data cost, not a weakness.
+                                 [\targets transfer, \postcond]
+     - H-T bal_integrity       : only transfer may write a balance — `main` is
+                                 exempted too as the trusted bootstrap that seeds
+                                 the DB. [\writing \diff(\ALL,{transfer,main}); 47/47]
+
+   The fourth, H-S `authn`, is NOT here by design: it is an EXTERNAL check-before-
+   use capability keyed on a session global (banking.c's `session_ok`). main.c
+   folds authentication INTO transfer (it self-validates the token and returns -1
+   on caller_idx == -1), so there is no session global to name — and a file-level
+   `happy \precond` cannot reference transfer's `token` PARAMETER (WP: "unbound
+   logic variable token"). authn therefore lives on banking.c / banking_attacks.c.
+   See banking.c / banking_attacks.c, README.md and ../docs/usage.md. --- */
 typedef struct {
     char from[50];
     char to[50];
@@ -195,6 +209,22 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
       \targets({transfer}), \context(\postcond),
       (\exists integer i; 0 <= i < MAX_USERS && db[i].balance != \old(db[i].balance))
         ==> audit_len > \old(audit_len);
+*/
+
+/* H-R non-repudiation (append-only): earlier audit records are never rewritten.
+   transfer assigns only audit_log[\old(audit_len)] (the new slot), so every
+   record below the old length is preserved -- a pure frame property. */
+/*@ happy \prop, \name("nonrepud_append_only"),
+      \targets({transfer}), \context(\postcond),
+      \forall integer i; 0 <= i < \old(audit_len) ==> audit_log[i] == \old(audit_log[i]);
+*/
+
+/* H-T integrity: only transfer may write an account balance. main is exempted
+   alongside transfer because it is the trusted bootstrap that seeds the DB
+   (lines in main()) -- banking.c had no bootstrap, so the question didn't arise. */
+/*@ happy \prop, \name("bal_integrity"),
+      \targets(\diff(\ALL, {transfer, main})), \context(\writing),
+      \separated(\written, &db[0 .. MAX_USERS - 1].balance);
 */
 
 /* =========================================================================
