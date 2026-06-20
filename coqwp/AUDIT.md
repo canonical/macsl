@@ -134,15 +134,34 @@ pulled in by `Rle_dec`/`Req_EM_T` and the `%R` literals) and
 `functional_extensionality_dep`. There are **no admits and no custom axioms**.
 `check.sh` whitelists those two for `Cfloat` only and fails on any other axiom.
 
-## Hardening roadmap (remaining)
-1. ~~`Memory.v` (11)~~ **done** (`Memory_hardened.v`, axiom-free).
-2. ~~`Vset.v` (11)~~ **done** (`Vset_hardened.v`; 9 axiom-free, 2 via
-   `functional_extensionality`).
-3. ~~`Cfloat.v` (32)~~ **done** (`Cfloat_hardened.v`; no admits/custom axioms,
-   only the 2 standard Reals axioms). Remaining: `ArcTrigo.v` (2), `ExpLog.v` (1)
-   — also `R`-based, so expect the same standard-Reals-axiom footing.
-4. CI: run `./check.sh` — per file it asserts no `Admitted`/`admit`, compiles,
-   and every lemma is `Closed under the global context` or depends solely on that
-   file's whitelisted standard axioms (Memory: none; Vset:
-   `functional_extensionality`; Cfloat: `functional_extensionality` +
-   `sig_forall_dec`). No regression of the proved set.
+## Hardening DONE: `ArcTrigo.v` (2) and `ExpLog.v` (1)
+
+`ArcTrigo_hardened.v` and `ExpLog_hardened.v` prove the remaining 3
+`(* Why3 goal *)` lemmas. These are **genuine** realizations, not witnesses:
+`asin`/`acos` are realized as Coq's own `Ratan.asin`/`Ratan.acos` and `exp` is
+Coq's `Rtrigo_def.exp`, so `Sin_asin`/`Cos_acos`/`exp_pos` are exactly the stdlib
+lemmas `sin_asin`/`cos_acos`/`exp_pos` — the admitted axioms are simply **true**.
+Same `R`-axiomatization footing as `Cfloat` (only `sig_forall_dec` +
+`functional_extensionality`; no admits, no custom axioms).
+
+## Hardening roadmap — COMPLETE
+
+All ~57 admitted lemmas across the vendored coqwp are now machine-checked:
+
+| File | lemmas | result |
+|---|---|---|
+| `Memory.v`   | 11 | axiom-free (Closed under the global context) |
+| `Vset.v`     | 11 | 9 axiom-free + 2 via `functional_extensionality` |
+| `Cfloat.v`   | 32 | no admits/custom axioms; 2 standard Reals axioms |
+| `ArcTrigo.v` | 2  | genuine; 2 standard Reals axioms |
+| `ExpLog.v`   | 1  | genuine; 2 standard Reals axioms |
+
+CI gate: run `./check.sh` — per file it asserts no `Admitted`/`admit`, compiles,
+and every lemma is `Closed under the global context` or depends solely on that
+file's whitelisted standard axioms (Memory: none; Vset:
+`functional_extensionality`; Cfloat/ArcTrigo/ExpLog: `functional_extensionality`
++ `sig_forall_dec`). No regression of the proved set.
+
+The opaque-definition `Admitted`s (~52) and the 3 `WhyType` `Axiom`s remain by
+design — they are abstract/uninterpreted symbols (§ above), not trust-bearing
+facts. The trust surface that *was* unproven (the admitted **lemmas**) is closed.

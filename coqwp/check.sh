@@ -59,5 +59,13 @@ check_file Cfloat_hardened.v 'functional_extensionality|sig_forall_dec' \
   neg_finite_f64 add_finite_f32 add_finite_f64 mul_finite_f32 mul_finite_f64 \
   div_finite_f32 div_finite_f64 sqrt_finite_f32 sqrt_finite_f64
 
+# ArcTrigo / ExpLog: genuine realizations over Coq's own asin/acos/exp; same
+# standard-Reals-axiom footing as Cfloat.
+check_file ArcTrigo_hardened.v 'functional_extensionality|sig_forall_dec' \
+  Sin_asin Cos_acos
+
+check_file ExpLog_hardened.v 'functional_extensionality|sig_forall_dec' \
+  exp_pos
+
 [ "$rc" -eq 0 ] && echo "ALL OK" || echo "FAILURES"
 exit $rc
