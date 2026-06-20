@@ -29,32 +29,33 @@ threat model the EBIOS study independently derived?*
 | **FE7** service unavailable (DoS) · **G3** | SS5/OS5 · V3 · **High** | H-D `\total` → `strtok_terminates.c`; H-D availability+RTE → `compliant.c::find_first_overdrawn` | **17/17** + **23/23** (hard) | 🟡 per-request totality proven **on drivers**; `main.c`'s real `get_query_param` still needs the strengthened `strtok` contract (proven *sound* in the driver, not yet wired into `main.c`) |
 | **FE8** credential disclosure · **G3** | SS6/OS6 · V2 · Moderate | H-I1 confidentiality → `compliant.c` | **63/63** (hard) | 🟡 verified on `compliant.c`, not on `main.c` |
 | **FE9** privilege escalation (role raised) · **G4** | SS7/OS7 · V2 · **High** | H-E `priv_monotonic` (`role >= \old`) → `main.c::transfer` | **52/52** (hard) | ✅ **verified on `main.c`** — the escalation gap the EBIOS reviewer caught is closed in code |
-| **FE10** silent audit saturation · **G4** | SS8/OS8 · V2 · **High** | H-R `nonrepud_complete` — **but guarded by `requires 0 <= audit_len < 1024`** | conditional | ⚠️ **GAP (headline)** — non-repudiation is proved **only while the log has room**; at capacity a balance can change with no record. The precondition *assumes the threat away* |
+| **FE10** silent audit saturation · **G4** | SS8/OS8 · V2 · **High** | H-R `nonrepud_atcap` → `audit_saturation.c` (+ `main.c` fail-closed guard) | **13/13** + red `transfer_unlogged_atcap` (hard) | ✅ **now closed** — fail-closed: a transfer that cannot be recorded refuses, so completeness holds even at a full log; `main.c`'s real `transfer` carries the guard (case 26 → 53/53) |
 | **FE11** token reuse / leakage spoofing · **G3** | SS9/OS9 · V2 · Moderate | — (trusted boundary) | not modeled | ⚠️ **GAP** — token expiry/revocation + query-string leakage are the declared trusted boundary; macsl proves the *discipline*, not the token lifecycle |
 
 ## 2. Verdict — does `main.c` match the EBIOS report?
 
-**Largely yes — FE2 now closed, two honest residual risks remain.** Of 11 feared events, the EBIOS
+**Largely yes — FE2 and FE10 now closed, one honest residual remains.** Of 11 feared events, the EBIOS
 threat model (derived code-blind) and the verification align well: the high-value money/identity events
-verified directly on `main.c`'s real `transfer` (FE1, FE3, FE4, FE5, FE9 — **52/52**), and the
+verified directly on `main.c`'s real `transfer` (FE1, FE3, FE4, FE5, FE9 — **53/53**), and the
 confidentiality + availability families on the flagship's companion drivers. Notably **FE9 (privilege
 escalation)** — the gap the disjoint EBIOS reviewer independently caught — *is* discharged on `main.c`
 by `priv_monotonic`, a clean cross-validation of the loop.
 
-**FE2 closed (this iteration).** The horizontal-RBAC gap is now a verified hyperproperty
-`rbac_own_account` (H-E horizontal): *a role-2 caller decreases no account but its own*. Proved
-deterministically on the clean integer driver `rbac_horizontal.c` (**13/13**) with the matching red
-control `transfer_cross` in `attacks.c` — the same driver-proof pattern used for `nonrepud_append_only`
-when `main.c`'s string-keyed `transfer` context-bloats. `main.c`'s executable C is unchanged (its body
-already enforces the guard).
+**FE2 closed.** The horizontal-RBAC gap is now a verified hyperproperty `rbac_own_account` (H-E
+horizontal): *a role-2 caller decreases no account but its own*. Proved deterministically on the clean
+integer driver `rbac_horizontal.c` (**13/13**) with the red control `transfer_cross` — the same
+driver-proof pattern used for `nonrepud_append_only`. `main.c`'s body already enforced the guard.
 
-### Residual risks (citable to their EBIOS scenario IDs — for W5 treatment)
-1. **FE10 / SS8 (G4, High) — silent audit saturation.** `nonrepud_complete` holds under
-   `requires 0 <= audit_len < 1024`. The EBIOS-feared case (log full, transfers still succeed
-   unlogged) is *outside* the proved envelope. **Strongest remaining finding.** Treatment: a verified
-   at-capacity policy (block transfers, or assert `audit_len < CAP` as an invariant the service
-   maintains) — not assume it.
-2. **FE11 / SS9 (G3, Moderate) — token lifecycle.** Expiry/revocation/leakage sit on the declared
+**FE10 closed.** The headline silent-saturation residual is remediated by a **fail-closed** discipline,
+verified as `nonrepud_atcap` (H-R at capacity): *a transfer that cannot be recorded refuses*, so "a
+balance changed ⇒ the log grew" holds even when the log may be full (precondition relaxed to
+`audit_len <= NLOG`). Proved on `audit_saturation.c` (**13/13**) with the red control
+`transfer_unlogged_atcap`. Unlike FE2 this was a genuine latent **defect** — `main.c`'s `transfer` now
+carries the fail-closed guard (`if (audit_len >= 1024) return -1;`, case 26 → **53/53**) as the runtime
+fix; the at-capacity theorem lives on the driver (the string-keyed form context-bloats).
+
+### Residual risk (citable to its EBIOS scenario ID — for W5 treatment)
+1. **FE11 / SS9 (G3, Moderate) — token lifecycle.** Expiry/revocation/leakage sit on the declared
    trusted boundary; honest scope limit, not a defect — record as accepted residual or extend scope.
 
 ### Plane-limited coverage (verified, but not on `main.c` itself)

@@ -18,7 +18,9 @@ Three gaps were spotted after the first iteration of the loop:
 - FE2 horizontal RBAC (G4, High). "A User may debit only their own account" is enforced in transfer's body but is not asserted as a HAPPY hyperproperty — code-enforced, not machine-verified.
 - FE11 token lifecycle (G3, Moderate). Expiry/revocation/query-string leakage are the declared trusted boundary — honest scope limit, not a defect.
 
-Closing FE2 meant adding a HAPPY policy that asserts the horizontal-RBAC rule ("a role-2 caller may debit only their own account") as a WP-discharged hyperproperty — confirming the matching attack goes RED. That lead to the creation of [rbac_horizontal.c](rbac_horizontal.c) by the loop of agents.
+**FE2 closed** by a new HAPPY policy asserting the horizontal-RBAC rule ("a role-2 caller may debit only their own account") as a WP-discharged hyperproperty, with the matching attack RED — see [rbac_horizontal.c](rbac_horizontal.c).
+
+**FE10 closed** by making the audit discipline **fail-closed**: a transfer that cannot record itself must refuse, so non-repudiation (a balance changed ⇒ the log grew) holds **even at capacity**. `main.c`'s real `transfer` now carries the fail-closed guard (runtime remediation of an actual latent defect — unlike FE2 the code did *not* previously enforce it), and the at-capacity theorem is proved on [audit_saturation.c](audit_saturation.c), with the silent-saturation attack RED. Only FE11 (the declared trusted boundary) remains, as an accepted scope limit.
 
 
 ## The three files and their roles
@@ -27,7 +29,7 @@ Closing FE2 meant adding a HAPPY policy that asserts the horizontal-RBAC rule ("
 |---|---|---|---|
 | **`main.c`** | **Realistic integration** | A full HTTP server (three routes) using real libc — `strtok`/`strcmp`/`strncpy`, `read`/`write`, `socket`/`accept`, variadic `snprintf`/`sscanf` — carrying the audit log + `log_transfer`. **Five policies are instrumented here on the real code** — the four banking ones (H-R `nonrepud_complete`, H-R `nonrepud_append_only`, H-T `bal_integrity`, H-S `authn`) plus **H-E `priv_monotonic`**. | `nonrepud_complete` **1/1** on `transfer`; `bal_integrity` **50/50** across the non-exempt functions; `authn` **1/1** (call-site check in `handle_client`); `priv_monotonic` **1/1** on `transfer`. `nonrepud_append_only` (full `AuditRecord` equality) is **context-bloated** on this big function, so its frame is proved **deterministically on an isolated driver** (`audit_append_frame.c`, see note). The *whole file* isn't all-green (the routes need loop invariants + libc specs) — which is exactly why `compliant.c` exists. |
 | **`compliant.c`** | **Compliant core (the positive proof)** | A focused, fully-contracted distillation of `main.c`'s security-relevant core (accounts, audit log, `authenticate`, `log_transfer`, `transfer`, a confidential `pin`, a `check` verifier, and a bounded request handler) carrying **seven policies across six families** (H-R ×2, H-S, H-T, H-I1, H-I2, H-D). The unambiguous "every policy holds" artifact. | **63/63** — all green. |
-| **`attacks.c`** | **Negative controls (the teeth)** | **Nine attacks**, **one per policy** (the eighth/ninth being the two H-E forms: vertical `escalate` and horizontal `transfer_cross`), each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **52/61** — exactly **nine** goals red, one per attack. |
+| **`attacks.c`** | **Negative controls (the teeth)** | **Ten attacks**, **one per policy** (including the two H-E forms — vertical `escalate`, horizontal `transfer_cross` — and the FE10 silent-saturation `transfer_unlogged_atcap`), each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **63/73** — exactly **ten** goals red, one per attack. |
 
 **Why three, not one.** `main.c` answers *"do the policies attach to real-world code?"* (yes — the
 libc layer is **not** "out of WP's reach"). `compliant.c` answers *"do the policies hold?"* on a core
@@ -44,6 +46,7 @@ attack `escalate` still sits with the other negative controls.)
 | Policy | HAPPY | Context | What it proves | Compliant proof | Attack |
 |---|---|---|---|---|---|
 | `nonrepud_complete` | **H-R** | `\postcond` | a balance changed ⇒ the audit log grew | `compliant.c` + `main.c` (default) | `transfer_silent` |
+| `nonrepud_atcap` | **H-R** | `\postcond` | non-repudiation holds **even at capacity** — a full log ⇒ no silent unlogged transfer (FE10, fail-closed) | `audit_saturation.c` (13/13, **deterministic driver**); `main.c` body fail-closed | `transfer_unlogged_atcap` |
 | `nonrepud_append_only` | **H-R** | `\postcond` | old audit records are never rewritten | `compliant.c` (scalar) + `audit_append_frame.c` (struct, **deterministic**) | `rewrite_audit` |
 | `bal_integrity` | **H-T** | `\writing` (`\diff(\ALL,{transfer})`) | only `transfer` may write a balance | `compliant.c` + `main.c` (50/50; `\diff` also exempts `main`, the trusted seed) | `tamper` |
 | `authn` | **H-S** | `\precond` | `transfer` only on an authenticated session | `compliant.c` + `main.c` (call-site check in `handle_client`) | `unauth_endpoint` |
@@ -53,10 +56,12 @@ attack `escalate` still sits with the other negative controls.)
 | `noleak` | **H-I2** | `\noninterference` | `check`'s public result is independent of the secret | `compliant.c` (self-composition) | `check` (leak) |
 | `availability` | **H-D** | `\total` | the request handler always returns (terminates) and faults on no input | `compliant.c` `find_first_overdrawn` (+`-wp-rte`) | `parse_request` |
 
-These nine policy instances cover **all seven** HAPPY families (**H-T, H-R, H-S, H-E, H-I1, H-I2, H-D**)
-— the full six STRIDE letters (S/T/R/I/D/E). H-E (Elevation) carries **two** forms — *vertical*
-(`priv_monotonic`, no tier raise) and *horizontal* (`rbac_own_account`, no cross-account debit, closing
-the EBIOS FE2 gap). No family is left to `happy-roadmap.md` only.
+These ten policy instances cover **all seven** HAPPY families (**H-T, H-R, H-S, H-E, H-I1, H-I2, H-D**)
+— the full six STRIDE letters (S/T/R/I/D/E). H-R (Repudiation) carries **three** forms — completeness
+(`nonrepud_complete`), append-only (`nonrepud_append_only`), and at-capacity (`nonrepud_atcap`, closing
+the EBIOS FE10 gap); H-E (Elevation) carries **two** — *vertical* (`priv_monotonic`, no tier raise) and
+*horizontal* (`rbac_own_account`, no cross-account debit, closing FE2). No family is left to
+`happy-roadmap.md` only.
 
 **On `availability` (H-D).** `\context(\total)` adds a `terminates` clause WP must discharge from the
 function's `loop variant`(s); bundled with `-wp-rte` it is the "never hangs, never crashes" theorem over
@@ -96,6 +101,19 @@ exactly the documented `nonrepud_append_only` cost — so the load-bearing fact 
 driver and the cross-account attack `transfer_cross` is its red control (case 25). `main.c`'s executable
 C is unchanged (the body already enforces it).
 
+**On `nonrepud_atcap` (H-R at capacity — the FE10 closure).** The EBIOS crosswalk flagged FE10 as the
+headline residual: `nonrepud_complete` is proved only under `requires 0 <= audit_len < 1024`, so the
+*full-log* case — where a transfer moves money but `log_transfer` can no longer append — is **assumed
+away**, a silent non-repudiation hole. Unlike FE2 (where the body already enforced the rule), this was a
+genuine latent **defect**: `main.c`'s `transfer` did *not* fail-closed. The fix is the **fail-closed**
+discipline — refuse a transfer that cannot be recorded — so "a balance changed ⇒ the log grew" holds
+*even when the log may be full* (precondition relaxed to `audit_len <= NLOG`). It is proved on
+`audit_saturation.c` (**13/13**, run case 31, deterministic), with the silent-saturation attack
+`transfer_unlogged_atcap` (moves money, records only if room) as its red control (case 25).
+`main.c`'s real `transfer` now carries the fail-closed guard (`if (audit_len >= 1024) return -1;`,
+case 26 → **53/53**) as the runtime remediation; its verified policies keep the in-scope `audit_len <
+1024` precondition, but the code no longer silently succeeds unlogged if that bound is ever reached.
+
 **On `pin_confidential` (H-I1) and `noleak` (H-I2) — why on `compliant.c`, not `main.c`.** These two
 confidentiality families need shapes `main.c`'s realistic code does not provide cleanly: H-I1's
 `\separated(\read, secret)` is provable only when the read locations are *named* and distinct from the
@@ -133,11 +151,12 @@ Two notes on the `main.c` instrumentation, both honest costs of *realistic* data
 - `bal_integrity` exempts `main` alongside `transfer` because `main()` seeds the DB balances at
   startup (the trusted bootstrap); compliant.c had no bootstrap, so the question didn't arise.
 
-## The nine attacks (caught in `attacks.c`)
+## The ten attacks (caught in `attacks.c`)
 
 | Attack | Violates | Caught as |
 |---|---|---|
 | `transfer_silent` — moves money, never logs | `nonrepud_complete` (H-R) | `transfer_silent…nonrepud_complete` red |
+| `transfer_unlogged_atcap` — moves money at capacity, records only if room | `nonrepud_atcap` (H-R, FE10) | `transfer_unlogged_atcap…nonrepud_atcap` red |
 | `rewrite_audit` — overwrites `audit[0]` | `nonrepud_append_only` (H-R) | `rewrite_audit…nonrepud_append_only` red |
 | `tamper` — writes a balance directly | `bal_integrity` (H-T) | `tamper…bal_integrity` red |
 | `unauth_endpoint` — calls `transfer` without auth | `authn` (H-S) | `unauth_endpoint_call_transfer_requires_authn` red |
@@ -170,11 +189,14 @@ $FC tests/small_example/compliant.c                          # 63/63
 # H-D availability, full claim (terminates + never-faults) on the request handler:
 $FC -wp-rte -wp-fct find_first_overdrawn tests/small_example/compliant.c   # all green (Terminating)
 
-# --- attacks.c : negative controls, exactly nine goals red ---
-$FC tests/small_example/attacks.c                  # 52/61
+# --- attacks.c : negative controls, exactly ten goals red ---
+$FC tests/small_example/attacks.c                  # 63/73
 
 # --- rbac_horizontal.c : FE2 horizontal access control, proved (H-E horizontal) ---
 $FC tests/small_example/rbac_horizontal.c          # 13/13  (transfer_cross is its red, in attacks.c)
+
+# --- audit_saturation.c : FE10 fail-closed non-repudiation at capacity (H-R) ---
+$FC tests/small_example/audit_saturation.c         # 13/13  (transfer_unlogged_atcap is its red)
 ```
 
 (`compliant.c` / `attacks.c` are also cases 24–25 in `../run.sh`. The `main.c` proof-status

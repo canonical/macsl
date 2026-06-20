@@ -161,3 +161,42 @@ int transfer_cross(int from, int to, int amount)
         \forall integer a; 0 <= a < NACC && a != caller_acct ==>
           balance[a] >= \old(balance[a]);
 */
+
+/* ATTACK 10 — H-R non-repudiation at capacity (FE10, silent audit saturation):
+   a transfer that moves money but appends only IF the log has room, with NO
+   fail-closed guard. When the audit log is full, money moves yet no record is
+   written -> the nonrepud_atcap postcondition (a balance change implies the log
+   grew, even at capacity) goes red. The verified form of "the bank kept
+   transacting after its ledger filled up." Compliant counterpart:
+   audit_saturation.c's fail-closed transfer. */
+/*@ requires 0 <= audit_len <= NLOG;
+    assigns audit[0 .. NLOG - 1], audit_len;
+    behavior room:
+      assumes audit_len < NLOG;
+      ensures audit_len == \old(audit_len) + 1;
+      ensures \result == 1;
+    behavior full:
+      assumes audit_len == NLOG;
+      ensures audit_len == \old(audit_len);
+      ensures \result == 0;
+    complete behaviors;
+    disjoint behaviors; */
+int log_capped(int from, int to, int amount);
+
+/*@ requires 0 <= from < NACC && 0 <= to < NACC;
+    requires 0 <= audit_len <= NLOG;
+    requires amount > 0;
+    assigns balance[from], balance[to], audit[0 .. NLOG - 1], audit_len; */
+int transfer_unlogged_atcap(int from, int to, int amount)
+{
+  if (balance[from] < amount) return -1;
+  balance[from] -= amount;          /* moves money unconditionally... */
+  balance[to]   += amount;
+  log_capped(from, to, amount);     /* ...but records only if room -> silent when full */
+  return 0;
+}
+/*@ happy \prop, \name("nonrepud_atcap"),
+      \targets({transfer_unlogged_atcap}), \context(\postcond),
+      (\exists integer i; 0 <= i < NACC && balance[i] != \old(balance[i]))
+        ==> audit_len > \old(audit_len);
+*/

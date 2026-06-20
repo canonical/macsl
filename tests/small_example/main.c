@@ -170,6 +170,15 @@ int get_role(const char *token) {
     assigns db[0 .. MAX_USERS - 1], audit_log[audit_len], audit_len;
 */
 int transfer(const char *token, const char *user_sending, const char *user_receiving, double amount) {
+    /* FE10 fail-closed (silent audit saturation): if the audit log is full it
+       cannot record this transfer, so REFUSE rather than move money silently
+       unlogged -- non-repudiation must hold even at capacity. The at-capacity
+       completeness theorem is proved on audit_saturation.c (the string-keyed
+       form here context-bloats, like nonrepud_append_only); this contract still
+       assumes room (audit_len < 1024), so the guard is the runtime safety net
+       for the case that precondition excludes. */
+    if (audit_len >= 1024) return -1;
+
     int caller_idx = -1;
     int sender_idx = -1;
     int receiver_idx = -1;

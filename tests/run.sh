@@ -145,9 +145,10 @@ echo "== Worked example (small_example: all seven HAPPY families together) =="
 check "banking/compliant" 'Proved goals: +63 / 63' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/compliant.c
 
-# 25. Nine attacks, one per policy: exactly nine goals red (attack 9 = the FE2
-#     horizontal-RBAC cross-account debit, rbac_own_account on transfer_cross).
-check "banking/attacks" 'Proved goals: +52 / 61' \
+# 25. Ten attacks, one per policy: exactly ten goals red (attack 9 = FE2
+#     horizontal-RBAC cross-account debit on transfer_cross; attack 10 = FE10
+#     silent audit saturation, nonrepud_atcap on transfer_unlogged_atcap).
+check "banking/attacks" 'Proved goals: +63 / 73' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/attacks.c
 
 # 26. The policies proved on main.c's REAL transfer(), through the ACSL libc
@@ -157,7 +158,7 @@ check "banking/attacks" 'Proved goals: +52 / 61' \
 #     this big function it is *context-bloated* (its loop + libc contracts inflate
 #     every goal); the SAME frame is proved DETERMINISTICALLY in case 27 below, and
 #     the scalar form is proved in case 24 -- so it is discharged, not skipped.
-check "mainc/policy-on-real-transfer" 'Proved goals: +52 / 52' \
+check "mainc/policy-on-real-transfer" 'Proved goals: +53 / 53' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl -wp-prop="-nonrepud_append_only" -wp-fct transfer tests/small_example/main.c
 
 # 27. The append-only STRUCT frame, proved DETERMINISTICALLY -- under a bounded,
@@ -193,6 +194,15 @@ check "hd/strtok-terminates" 'Proved goals: +17 / 17' \
 #     the clean integer model. The matching cross-account attack is red in case 25.
 check "rbac/horizontal-own-account" 'Proved goals: +13 / 13' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/rbac_horizontal.c
+
+# 31. FE10 silent audit saturation, isolated and PROVED. Closes the headline
+#     crosswalk residual: a transfer that cannot record itself must FAIL CLOSED, so
+#     non-repudiation (balance changed => log grew) holds EVEN at capacity (precond
+#     allows audit_len == NLOG). main.c carries the same fail-closed guard now; the
+#     at-capacity proof lives here free of string context bloat. Red: case 25's
+#     transfer_unlogged_atcap (moves money, records only if room).
+check "audit/saturation-failclosed" 'Proved goals: +13 / 13' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/audit_saturation.c
 
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]
