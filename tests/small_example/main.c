@@ -163,7 +163,7 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
    the audit log grew.
 
    WP PROOF STATUS (frama-c -macsl -wp, this install):
-     - `transfer` alone: 49/49 proved, INCLUDING the macsl-generated
+     - `transfer` alone: 51/51 proved, INCLUDING the macsl-generated
        `Post-condition 'nonrepud_complete,meta'`. WP discharges it THROUGH
        Frama-C's ACSL libc (strcmp/strlen contracts checked at the call sites)
        plus the loop invariant above and log_transfer's contract. This is the
@@ -171,11 +171,23 @@ int transfer(const char *token, const char *user_sending, const char *user_recei
        all. ("outside WP's reach" was wrong.)
      - `transfer` + `log_transfer`: 68/69. The single open goal is in
        log_transfer's BODY: the second strncpy's `valid_read_nstring(to,49)`
-       precondition. It is TRUE (the param is separated from the audit buffer),
-       but SMT cannot frame `valid_read_nstring` across the first (separated)
-       strncpy write -- a prover-frame limitation, resolvable via Coq escalation
-       or a frame lemma (`frama-c/references/coq-escalation.md`). It is NOT the
-       policy and NOT impossibility -- ordinary verification effort.
+       precondition.
+   COQ ESCALATION (attempted; verdict: wrong tool for this goal). Generating
+   the Coq goal (`-wp-prover coq -wp-interactive update`) shows it is a
+   MEMORY-MODEL FRAMING obligation: preserve `valid_read_nstring(to,49)` across
+   the first strncpy's writes. `valid_read_nstring` is a disjunction — its
+   init-based 49-byte case frames from the separation here, but its
+   `valid_read_string` (arbitrary-length) case needs the WHOLE string separated,
+   which the 49-byte precondition does NOT give (so as written it is not even a
+   theorem). Strengthening to object-distinctness (`\base_addr` !=) makes it a
+   theorem but SMT still won't frame `valid_read_nstring`, AND it cascades 4 new
+   call-site goals into transfer. A sound Coq proof is possible only by
+   re-deriving the strlen frame (with the `is_sint8` side-conditions on the
+   Q_strlen axioms) — brittle, and exactly the framing case
+   `frama-c/references/coq-escalation.md` says to DISSOLVE, not hand-prove (Coq
+   there is for induction / non-linear arithmetic). So this is left as a
+   precisely-characterised residual on the logger's body — NOT the policy, which
+   stands at 51/51. No admit/axiom was used.
    Run: see tests/small_example/README.md. */
 /*@ happy \prop, \name("nonrepud_complete"),
       \targets({transfer}), \context(\postcond),
