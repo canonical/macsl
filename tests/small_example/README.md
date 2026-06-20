@@ -6,13 +6,13 @@ policies that secure it.
 ## Files
 
 - **`main.c`** — the full example: an HTTP server with three routes. It now also carries the **audit
-  log + `log_transfer`** (non-repudiation): every balance-changing transfer appends a record. Its libc
-  calls *are* specified by Frama-C's ACSL libc (`strcmp`/`strncpy`/`strchr`/`strtok`/`strlen` in
-  `string.h`, `read`/`write`/`close` in `unistd.h`, `socket`/`bind`/`listen`/`accept` in
-  `sys/socket.h`; the variadic `snprintf`/`sscanf` go through the **Variadic** plugin). A clean WP
-  proof of `main.c` is a matter of loop invariants plus the coarse (`assigns`/`\from`, bounded-result)
-  nature of those library specs — effort, not impossibility. We demonstrate the policies on the
-  focused, fully-specified core instead, to keep the demo unambiguous:
+  log + `log_transfer`** (non-repudiation), and the **H-R `nonrepud_complete` policy is checked on its
+  REAL `transfer()`**: `frama-c -macsl -wp -wp-fct transfer` proves **51/51**, including the policy's
+  postcondition — discharged *through* Frama-C's ACSL libc (`strcmp`/`strlen` contracts checked at the
+  call sites) plus a loop invariant and `log_transfer`'s contract. So the libc layer is **not** "out of
+  WP's reach". (Verifying `log_transfer`'s body too is 68/69; the one open goal is a `valid_read_nstring`
+  *frame* limitation on `strncpy`, Coq-escalable — ordinary effort, not the policy. See the proof-status
+  note in `main.c`.) `banking.c` below remains the crisp, fully-green core for the attack table:
 - **`banking.c`** — a focused, fully-contracted distillation of the security-relevant core (accounts,
   the audit log, `authenticate`, `log_transfer`, `transfer`), with all four policies. This is the
   **compliant** system: `macsl -wp` proves **18/18**.

@@ -148,5 +148,10 @@ check "banking/compliant" 'Proved goals: +18 / 18' \
 check "banking/attacks" 'Proved goals: +25 / 29' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/banking_attacks.c
 
+# 26. The H-R policy proved on main.c's REAL transfer(), through the ACSL libc
+#     (strcmp/strlen contracts) -- "outside WP's reach" was wrong.
+check "mainc/policy-on-real-transfer" 'Proved goals: +51 / 51' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl -wp-fct transfer tests/small_example/main.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]
