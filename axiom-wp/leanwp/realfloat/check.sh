@@ -7,8 +7,16 @@ cd "$(dirname "$0")"
 source "$HOME/.elan/env" 2>/dev/null || true
 ALLOWED='propext|Classical.choice|Quot.sound'
 command -v lake >/dev/null 2>&1 || { echo "INFRA-MISSING: lake not on PATH"; exit 2; }
-# fetch prebuilt mathlib oleans (no-op if already present)
-lake exe cache get >/dev/null 2>&1 || { echo "INFRA-MISSING: mathlib cache unavailable"; exit 2; }
+# Fetch prebuilt mathlib oleans, then VERIFY they actually landed: `lake exe cache get`
+# can exit 0 yet leave Mathlib.olean absent (silent partial/transient download), which
+# otherwise surfaces downstream as a confusing "COMPILE FAILED". Retry, then fail-closed
+# as INFRA-MISSING (not a twin failure) if the cache still didn't populate.
+MOLEAN=".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean"
+get_cache() { echo "== lake exe cache get =="; lake exe cache get || return 1; [ -f "$MOLEAN" ]; }
+if ! get_cache; then
+  echo "  cache incomplete; retrying once..."; sleep 5
+  get_cache || { echo "INFRA-MISSING: mathlib oleans unavailable after retry ($MOLEAN absent)"; exit 2; }
+fi
 rc=0
 for f in RealFloat.lean Cfloat.lean; do
   echo "== $f =="

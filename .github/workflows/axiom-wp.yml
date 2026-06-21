@@ -37,7 +37,11 @@ jobs:
       - name: Install CoqInterval (Trigonometry_hardened.v)
         run: |
           opam repo add coq-released https://coq.inria.fr/opam/released || true
-          opam install -y coq-interval coq.8.20.1 why3.1.8.2
+          # Pin coq-mathcomp-ssreflect to the 1.x line (what coq-interval uses in the
+          # framac-coq8 switch). The 2.x line drags in Hierarchy Builder -> coq-elpi ->
+          # rocq-elpi 3.2.0, whose dune build fails on Coq 8.20 ("elpi_plugin.cmxs: No
+          # such file") -- the documented transitional staging bug. 1.19.0 needs no elpi.
+          opam install -y coq-interval coq.8.20.1 why3.1.8.2 coq-mathcomp-ssreflect.1.19.0
       # The opam `why3` package is built with `--disable-coq-libs`, so it ships NO
       # compiled Coq realizations (only the `.v` sources live in the release tarball,
       # not the switch). The *_hardened.v twins `Require Import BuiltIn` (and map/int/
@@ -157,6 +161,6 @@ jobs:
       - name: Versions
         run: opam exec -- sh -c 'coqc --version | head -1; opam list coq-elpi coq-mathcomp-ssreflect 2>/dev/null | tail -2'
       - name: Build leg-1 model (semantics core + SeparatedTrans + Model)
-        run: |
-          cd "$RUNNER_TEMP/why3sem"
-          opam exec -- dune build leg1/SeparatedTrans.vo leg1/Model.vo
+        # opam exec must run from the workspace so it finds the local ./_opam switch
+        # (setup-ocaml's switch); cd-ing to $RUNNER_TEMP first loses it ("No switch").
+        run: opam exec -- bash -c 'cd "$RUNNER_TEMP/why3sem" && dune build leg1/SeparatedTrans.vo leg1/Model.vo'
