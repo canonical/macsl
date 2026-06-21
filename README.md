@@ -90,9 +90,16 @@ reflective computation) — **no custom or behavioural axioms**.
 The last open lemma — `real/Trigonometry.v::Pi_double_precision_bounds` (a 1-ulp-at-2⁻⁵¹ bracket on π
 the upstream realization stubbed out "to avoid a dependency on CoqInterval") — is now **proved with
 CoqInterval**, in both `Trigonometry_hardened.v` and the patched original (`Qed`, no stub; the original
-gains a build-time `coq-interval` dependency). The remaining work is the parallel **Lean**
-cross-validation (`axiom-wp/leanwp/`, [`axiom-wp/DUALTP-STATUS.md`](axiom-wp/DUALTP-STATUS.md)): a
-future `Why3 ≡ Coq ≡ Lean` 3-way check.
+gains a build-time `coq-interval` dependency).
+
+**Lean cross-validation — 57 of 58 twins done.** Every trust-bearing lemma now has a verified **Lean**
+twin (`axiom-wp/leanwp/`, gated by `leanwp/check.sh` + `leanwp/realfloat/check.sh`; no `sorry`, axioms ⊆
+{`propext`, `Classical.choice`, `Quot.sound`}) — `Memory` 11, `Vset` 11, `Cfloat` 32, `ArcTrigo` 2,
+`ExpLog` 1. The sole holdout is `Pi_double_precision_bounds`: mathlib has no π bound tight enough for the
+1-ulp-at-2⁻⁵¹ bracket and no `interval`-style reflective π tactic, so it is deferred honestly (the Coq
+side needed CoqInterval for exactly this). What is still future is the `Why3 ≡ Coq ≡ Lean` **3-way
+structural check** (`axiom-wp/DUALTP-STATUS.md`); until it exists each twin is *cross-validated*, not yet
+*certified*.
 
 ## Two toolchains: Coq 8.20.1 (coqwp) and Rocq 9.0 (leg-1)
 

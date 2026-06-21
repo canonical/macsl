@@ -52,4 +52,78 @@ theorem separated_trans
 -- Axiom audit (the reverify gate will read this line):
 #print axioms separated_trans
 
+/-- helper: inclusion is transitive (coqwp `included_trans`). -/
+theorem included_trans (p q r : Addr) (a b c : Int)
+    (h1 : included p a q b) (h2 : included q b r c) : included p a r c := by
+  unfold included at *
+  intro ha
+  obtain ⟨hb0, hbe, ho1, ho2⟩ := h1 ha
+  have hbpos : 0 < b := by omega
+  obtain ⟨hc0, hbe2, ho3, ho4⟩ := h2 hbpos
+  omega
+
+theorem separated_1 (p q : Addr) (a b i j : Int)
+    (hsep : separated p a q b)
+    (hi : p.offset ≤ i ∧ i < p.offset + a)
+    (hj : q.offset ≤ j ∧ j < q.offset + b) :
+    ¬ (Addr.mk p.base i = Addr.mk q.base j) := by
+  unfold separated at hsep
+  intro h
+  injection h with hb hij
+  omega
+
+theorem separated_included (p q : Addr) (a b : Int)
+    (ha : 0 < a) (hb : 0 < b) (hsep : separated p a q b) : ¬ included p a q b := by
+  unfold separated at hsep
+  unfold included
+  intro hinc
+  obtain ⟨hb0, hbe, h1, h2⟩ := hinc ha
+  omega
+
+/-- farray modelled by its access function (as Memory_hardened.v: `Map.map a b := a -> b`). -/
+def eqmem {α : Type} (m1 m2 : Addr → α) (p : Addr) (a1 : Int) : Prop :=
+  ∀ q : Addr, included q 1 p a1 → m1 q = m2 q
+
+theorem eqmem_included {α : Type} (m1 m2 : Addr → α) (p q : Addr) (a1 b : Int)
+    (hpq : included p a1 q b) (heq : eqmem m1 m2 q b) : eqmem m1 m2 p a1 := by
+  intro r hr
+  exact heq r (included_trans r p q 1 a1 b hr hpq)
+
+theorem eqmem_sym {α : Type} (m1 m2 : Addr → α) (p : Addr) (a1 : Int)
+    (h : eqmem m1 m2 p a1) : eqmem m2 m1 p a1 := by
+  intro q hq; exact (h q hq).symm
+
+instance instDecSeparated (p : Addr) (a : Int) (q : Addr) (b : Int) :
+    Decidable (separated p a q b) := by unfold separated; infer_instance
+
+/-- `havoc` realized with the decidable `separated` (mirrors Memory_hardened.v). -/
+def havoc {α : Type} (m0 m1 : Addr → α) (p : Addr) (n : Int) : Addr → α :=
+  fun q => if separated q 1 p n then m1 q else m0 q
+
+theorem havoc_access {α : Type} (m0 m1 : Addr → α) (q p : Addr) (a1 : Int) :
+    (separated q 1 p a1 → havoc m0 m1 p a1 q = m1 q) ∧
+    (¬ separated q 1 p a1 → havoc m0 m1 p a1 q = m0 q) := by
+  unfold havoc
+  refine ⟨fun h => ?_, fun h => ?_⟩
+  · rw [if_pos h]
+  · rw [if_neg h]
+
+/-- `table_to_offset` realized as identity (mirrors Memory_hardened.v). -/
+abbrev Table := Unit
+def table_to_offset (_ : Table) (o : Int) : Int := o
+
+theorem table_to_offset_zero (t : Table) : table_to_offset t 0 = 0 := rfl
+
+theorem table_to_offset_monotonic (t : Table) (i j : Int)
+    (h : i ≤ j) : table_to_offset t i ≤ table_to_offset t j := h
+
+#print axioms separated_1
+#print axioms separated_included
+#print axioms included_trans
+#print axioms eqmem_included
+#print axioms eqmem_sym
+#print axioms havoc_access
+#print axioms table_to_offset_zero
+#print axioms table_to_offset_monotonic
+
 end Frama.Memory

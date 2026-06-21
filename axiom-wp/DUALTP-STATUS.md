@@ -19,16 +19,32 @@ axiom-wp/
 
 ## Status
 
-| Lemma | Coq | Lean | 3-way crosscheck | Certified? |
+| Family | Coq | Lean | 3-way crosscheck | Certified? |
 |---|---|---|---|---|
-| `Memory.separated_trans` | ✅ Closed-under-global-context | ✅ `{propext, Classical.choice, Quot.sound}` | ⛔ tooling not built | **partial** (both proofs hold; 3-way pending) |
+| `Memory` (11 lemmas: separation/inclusion/eqmem/havoc/table + 3 addr↔Z bijection) | ✅ `Memory_hardened.v` | ✅ 8 `leanwp/Memory.lean` + 3 bijection `leanwp/realfloat/RealFloat.lean` (11/11) | ⛔ tooling not built | **partial** |
+| `Vset` (11 lemmas) | ✅ `Vset_hardened.v` | ✅ `leanwp/Vset.lean` (11/11) | ⛔ tooling not built | **partial** |
+| `Cfloat` (32 lemmas) | ✅ `Cfloat_hardened.v` | ✅ `leanwp/realfloat/Cfloat.lean` (32/32) | ⛔ tooling not built | **partial** |
+| `ArcTrigo` (2) / `ExpLog` (1) | ✅ `*_hardened.v` | ✅ `leanwp/realfloat/RealFloat.lean` (3/3) | ⛔ tooling not built | **partial** |
+| `Trigonometry` (1: `Pi_double_precision_bounds`) | ✅ `Trigonometry_hardened.v` (CoqInterval) | ⛔ **deferred** — mathlib has no tight-enough π bound | ⛔ tooling not built | pending |
 
-**Pilot note (Phase 1).** `Memory.separated_trans` is the spec's pilot. Both proofs are written and
-**independently verified** (Coq via `coqwp/check.sh`; Lean 4.31.0 via `leanwp/check.sh`), and the two
-statements were authored to be structurally identical to WP's Why3 goal. What is **not yet mechanical** is
-the 3-way structural equality check (`dualtp/`, spec §5.4) that would prove `Why3 ≡ Coq ≡ Lean` rather than
-relying on human eyeballing. Until that tool exists and gates, this lemma is **partial**, not certified —
-do not report it as fully dual-TP.
+**Lean twins (status) — 57 of 58 done.** Every trust-bearing coqwp lemma now has a verified Lean twin
+**except `Pi_double_precision_bounds`**. Two gates, both fail-closed (Lean 4.31.0; no `sorry`; axioms ⊆
+{propext, Classical.choice, Quot.sound}):
+- `leanwp/check.sh` — the **standalone** core (no mathlib): `Memory.lean` (8) + `Vset.lean` (11).
+- `leanwp/realfloat/check.sh` — the **mathlib** twins (lake project on mathlib `v4.31.0`):
+  `RealFloat.lean` (3 `Memory` addr↔Z bijection + 2 `ArcTrigo` + 1 `ExpLog`) + `Cfloat.lean` (32).
+
+Statements are authored structurally identical to the Coq twins / WP's Why3 goals.
+
+**The one holdout — `Pi_double_precision_bounds`.** Deferred honestly, not faked. The Coq side discharges
+it with **CoqInterval** (a 1-ulp-at-2⁻⁵¹, ~16-digit bracket on π). mathlib's standard π bounds
+(`Real.pi_gt_3141592` / `Real.pi_lt_3141593`) are only ~6 digits — *looser* than the bracket's endpoints,
+so they cannot prove it, and mathlib ships no `interval`-style reflective π tactic to close the gap cheaply.
+Same lemma that needed the extra CoqInterval dependency on the Coq side; the Lean twin waits on an
+equivalent tight-π facility.
+
+What is **still not mechanical** for any twin is the 3-way structural equality check (`dualtp/`, spec §5.4)
+proving `Why3 ≡ Coq ≡ Lean` — so each is **partial**, not certified, until that tool exists.
 
 **Leg 1 (semantic Why3↔Coq anchoring, spec §5.4a) — substantial progress, see the Leg 1 section below.**
 The stronger *semantic* check (Coq `separated_trans_Coq` ⟺ `formula_rep` of the Why3 AST, against the
