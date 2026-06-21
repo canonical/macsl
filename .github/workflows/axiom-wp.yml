@@ -119,10 +119,10 @@ jobs:
   # toolchain from the coqwp gate above (Coq 8.20.1): the joscoh/why3-semantics
   # formalization needs MathComp 2.x -> Hierarchy Builder -> coq-elpi, which will not
   # build on the Coq-8.20 pin. This job gates that the semantics + the leg-1 model
-  # (SeparatedTrans.v + Model.v) build and stay axiom-free. The obligation's final
-  # cast-cancellation lemma is documented (not yet a theorem), so this gates the
-  # INFRASTRUCTURE, not the completed proof. why3-semantics is vendored at a pinned
-  # commit (it is gitignored, not stored in this repo).
+  # (SeparatedTrans.v + Model.v) build and stay axiom-free. Model.v now contains the
+  # CLOSED obligation `sep_trans_faithful` (formula_rep ... = true <-> sep_trans_prop),
+  # so building Model.vo gates the completed proof (not just infrastructure).
+  # why3-semantics is vendored at a pinned commit (gitignored, not stored in this repo).
   leg1:
     runs-on: ubuntu-latest
     steps:

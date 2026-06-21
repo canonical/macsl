@@ -6,10 +6,11 @@ Cohen–Johnson-Freyd denotational semantics —
 
 > `separated_trans_Coq  ⟺  formula_rep … ⟦Why3(separated_trans)⟧`
 
-This file records the **grounded feasibility spike** for the pilot lemma. The
-obligation proof itself is **not yet started** — it is blocked on a heavy but
-well-characterized build step (§3). Nothing here is a green; it is the honest
-"start": ground truth + coverage check + build path.
+This file records leg 1 for the pilot lemma. **It is now CLOSED:** the obligation
+`formula_rep … sep_trans_fmla = true ↔ sep_trans_prop` is the theorem
+`sep_trans_faithful` in `Model.v` (axiom-clean — `Print Assumptions` = the
+why3-semantics framework's standard base only). The build path and ground-truth
+notes below are kept for the record; see the Status checklist for the live state.
 
 ## 1. Ground truth `Why3(L)` — extracted, and it matches both proofs
 `why3-separated_trans.mlw` is the **verbatim** WP Why3 source
@@ -101,21 +102,17 @@ which must stay pinned for the coqwp/frama-c work. Then resume at §4–§5. Eve
   the `⟺` against `formula_rep`-as-`Prop` by reasoning, not by evaluation
   (spec §5.4a, §10).
 
-## 5. Next steps (resume here once coq-elpi/MathComp build, e.g. on Coq Platform)
-1. In an environment with **prebuilt** coq-elpi + MathComp 2.3.0 (Coq Platform
-   8.20, or a CI image), `opam install coq-equations.1.3.1+8.20
-   coq-mathcomp-ssreflect.2.3.0 coq-stdpp.1.11.0 coq-ext-lib.0.13.0`.
-2. Vendor the **full** `joscoh/why3-semantics` **`coq-8.20` branch** at a pinned
-   commit under `axiom-wp/why3-semantics/` (mind licence/attribution); `make proofs`.
-3. Read the real `Syntax.v` `formula`/`term` constructors (already mapped:
-   `Fquant Tforall` / `Fbinop Timplies` / `Fpred` / `Tfun`); write
-   `⟦separated_trans⟧ : formula` (the AST→`formula` bridge for this lemma).
-4. Add the bridge **round-trip check** (pretty-print the `formula` back through
-   Why3, diff vs `why3-separated_trans.mlw`) — spec §5.8, fail-closed.
-5. Prove the §4 obligation `Coq(L) ⟺ formula_rep …`; confirm axiom-clean
-   (`Print Assumptions` ⊆ `A_coq`).
-6. Wire a fail-closed `leg1/check.sh` + a CI job; flip `Memory.separated_trans`'s
-   `crosscheck` status toward certified.
+## 5. Status of the steps
+1. Toolchain (Rocq-9.0 isolated switch `dualtp-leg1-r9`): **DONE** (`BUILD.md`).
+2. why3-semantics vendored + built (`rocq-9.0` branch, pinned `d75ba4c`): **DONE**.
+3. AST→`formula` bridge `sep_trans_fmla`, `gamma_valid`, `sep_trans_typed`: **DONE**.
+4. Bridge **round-trip check** (pretty-print `sep_trans_fmla` back through Why3, diff vs
+   `why3-separated_trans.mlw`, spec §5.8): **optional hardening, not yet done**.
+5. The §4 obligation `Coq(L) ⟺ formula_rep …`: **DONE** — `sep_trans_faithful`,
+   axiom-clean (`Print Assumptions` = the framework's standard base).
+6. CI: the `leg1` job in `.github/workflows/axiom-wp.yml` builds `Model.vo` (so the proof
+   is gated) and guards against `Admitted`/`admit`/`Axiom`/`Abort`. With leg 2 (`dualtp/`)
+   also passing, `Memory.separated_trans` is **dual-TP certified**.
 
 ## Status
 - [x] Ground-truth `Why3(L)` extracted; Why3≡Coq≡Lean confirmed by inspection.
@@ -156,19 +153,15 @@ which must stay pinned for the coqwp/frama-c work. Then resume at §4–§5. Eve
         and applies `includedb`/`separatedb`;
       - boolean predicates `includedb`/`separatedb` + `includedb_iff`/`separatedb_iff` (reflect to the
         Coq `included`/`separated`).
-- [~] **§5 step 5 (the equivalence) — reduced to a concrete goal; finishing remains.**
-      Obligation `formula_rep ... sep_trans_fmla = true <-> sep_trans_prop` is stated in `Model.v`;
-      `unfold sep_trans_fmla, sep_trans_body; simpl_rep_full` reduces it to
-      `all_dec (forall d:addr … all_dec (forall d4:Z, implb (my_preds included_ps [] (pred_arg_list …
-      [Tvar p;…] (term_rep …))) (implb (my_preds separated_ps …) (my_preds separated_ps …))))`.
-      Stripping the 6 `all_dec` is **DONE** (`allb` lemma + `setoid_rewrite`, in `Model.v`): the goal
-      reduces to `(forall d..d4, implb (my_preds included_ps [] (pred_arg_list ..)) (implb ..)) <-> sep_trans_prop`.
-      `predsym_eq_dec included_ps included_ps` confirmed to reduce to `left e` (so `my_preds` enters the
-      `includedb` branch). **REMAINING — a genuine UIP/cast-cancellation proof (NOT mere bookkeeping):**
-      the framework's decidable equalities on `sort`/`typesym` (sig-types + records with *proof fields*)
-      do NOT reduce under conversion, so `domain my_dom_aux addr_sort` is only propositionally `= addr`
-      and `sym_sigma_args included_ps [] = pred_srts` holds via `sort_inj`, not `reflexivity`. The three
-      cast layers (`cast_set` from `get4` ⊕ `term_rep`'s `dom_cast` ⊕ `get_arg_list_hnth`'s `dom_cast`)
-      must be cancelled with `dom_cast_refl`/`dom_cast_eq` + `UIP_dec` (predsym/sort), then `term_rep
-      (Tvar x) = dom_cast (var_to_dom vv' x)` connects to the bound `d_i`, closing via
-      `includedb_iff`/`separatedb_iff` + `implb`. Laborious but axiom-free; no `Admitted` left in the file.
+- [x] **§5 step 5 (the equivalence) — CLOSED. `sep_trans_faithful` is a theorem in `Model.v`:**
+      `formula_rep ... sep_trans_fmla = true <-> sep_trans_prop`, axiom-clean (no proof holes; the
+      `Print Assumptions` footprint is exactly the framework's standard base — `eq_rect_eq`,
+      `functional_extensionality`, `classic`, `constructive_indefinite_description`, `sig_forall_dec`).
+      The genuine UIP/cast-cancellation (the framework's `sort`/`typesym` decidable equalities don't
+      reduce under conversion, so `domain my_dom_aux addr_sort` is only propositionally `= addr` and
+      `sym_sigma_args included_ps [] = pred_srts` holds via `sort_inj`) is discharged by the helper
+      lemmas: `term_rep_tvar`/`argval`/`posval` push the three cast layers (`cast_set` from `get4` ⊕
+      `term_rep`'s `dom_cast` ⊕ `get_arg_list_hnth`'s `dom_cast`) and cancel the eq_rect tower via
+      `scast_scast`/`scast_eq_uip`/`dom_cast_*`/`UIP_dec`; `collapseA`/`collapseZ` land on `D2A`/`D2Z`;
+      `my_preds_inc`/`_sep_qr`/`_sep_pr` evaluate `my_preds`; `includedb_iff`/`separatedb_iff` + `implb`
+      and the `D2A`/`D2Z` bijections (`D2A_inv`/`D2Z_inv`) close the `<->`.

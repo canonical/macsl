@@ -167,7 +167,7 @@ Proof.
   - exfalso; exact (np H).
 Qed.
 
-(* REDUCTION (verified to compile):
+(* REDUCTION + CLOSURE (now a theorem -- see `sep_trans_faithful` at the end).
      unfold sep_trans_fmla, sep_trans_body; simpl_rep_full;
      rewrite allb; repeat setoid_rewrite allb.
    turns the obligation
@@ -180,41 +180,244 @@ Qed.
               (implb (my_preds separated_ps [] (pred_arg_list ... [Tvar q_vs;...]))
                      (my_preds separated_ps [] (pred_arg_list ... [Tvar p_vs;...]))))
      <-> sep_trans_prop.
-   REMAINING (one cast-cancellation lemma, mechanical): prove the helper
-     my_preds included_ps [] (pred_arg_list my_pd my_vt included_ps []
-        [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] (term_rep .. vv) Hval)
-       = includedb (D2A (vv p_vs)) (D2Z (vv lp_vs)) (D2A (vv q_vs)) (D2Z (vv lq_vs))
-   (and the separated analogue), where the projections from a domain value to the
-   concrete carrier are
-     Definition Hva : v_subst my_vt addr_ty = addr_sort := ltac:(apply sort_inj; reflexivity).
-     Definition Hvi : v_subst my_vt vty_int = s_int     := ltac:(apply sort_inj; reflexivity).
-     Definition D2A d := cast_set dom_addr_eq (dom_cast my_dom_aux Hva d).
-     Definition D2Z d := dom_cast my_dom_aux Hvi d.
-
-   PRECISE PINNED STATE (verified this session): after
-     unfold my_preds; destruct (predsym_eq_dec included_ps included_ps) as [Heq|H];
-     [|contradiction]; replace Heq with eq_refl (UIP_dec predsym_eq_dec); simpl
-   the helper goal is exactly
-     includedb (dom_to_addr (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux))
-        (sym_args_inc [])) ARGS))) (dom_to_Z (hlist_hd (hlist_tl ..))) ... = includedb (D2A ..) ..
-   with ARGS := pred_arg_list .. (term_rep .. vv) Hval. Closing toolkit, all PRESENT in
-   the why3-semantics core (no new lemmas needed):
-     - cast_arg_list = the scast above (Domain.v); push it through the projections with
-       hlist_hd_cast / hlist_tl_cast (Domain.v);
-     - hlist_hd (hlist_tl^k ARGS) = hnth k ARGS, then get_arg_list_hnth (Denotational.v)
-       gives hnth k = dom_cast _ (term_rep .. (nth k ts) ..) with term_rep_irrel for the
-       typing-proof side-condition;
-     - term_rep_equation_3 : term_rep .. (Tvar x) ty Hty = dom_cast _ (f_equal (val vt)
-       (eq_sym (ty_var_inv Hty))) (var_to_dom .. vv x), and var_to_dom .. vv x = vv x;
-     - collapse the resulting tower (cast_set ∘ scast ∘ dom_cast ∘ dom_cast) of (vv x):
-       every layer is an eq_rect over a Set equality between the SAME endpoints, so
-       scast_scast + scast_eq_uip / dom_cast_compose + dom_cast_eq + UIP_dec collapse it
-       to D2A/D2Z (vv x);
-     - finish with includedb_iff / separatedb_iff + implb semantics, and reindex the
-       outer `forall d:domain` as `forall p:addr` via the D2A/D2Z bijections.
+   The cast-cancellation is discharged by the helper lemmas below
+   (term_rep_tvar / argval / posval compute the denotation of each Tvar predicate
+   argument through the dependent dom_cast layers; collapseA/collapseZ reduce the
+   get4 cast tower to the carrier projections D2A/D2Z; my_preds_inc/_sep_* give the
+   value of my_preds on the real argument lists). The outer `forall d:domain` is
+   reindexed as `forall p:addr` via the D2A/D2Z bijections (D2A_inv/D2Z_inv), and
+   includedb_iff/separatedb_iff + implb close the equivalence.
 
    AXIOM BASE (finding): the why3-semantics framework's Cast.UIP is derived from Stdlib's
    Eqdep.Eq_rect_eq.eq_rect_eq (Streicher's K), so `formula_rep` itself rests on eq_rect_eq.
-   Hence the closed obligation is "axiom-free in the leg-1 sources" but Print Assumptions
-   will legitimately list the framework's eq_rect_eq (UIP/K) — the allowed A_coq base for
-   leg 1, not a new axiom. No Admitted is left in this file. *)
+   So `sep_trans_faithful` carries NO proof hole and introduces NO new axiom; its
+   Print-Assumptions footprint is exactly the framework's standard base (eq_rect_eq /
+   functional_extensionality / classic / constructive_indefinite_description /
+   sig_forall_dec) -- the allowed A_coq for leg 1. *)
+
+(* ===== projection casts + helper lemmas for the faithfulness obligation ===== *)
+Definition Hva : v_subst my_vt addr_ty = addr_sort := ltac:(apply sort_inj; reflexivity).
+Definition Hvi : v_subst my_vt vty_int = s_int := ltac:(apply sort_inj; reflexivity).
+Definition D2A (d : domain my_dom_aux (v_subst my_vt addr_ty)) : addr :=
+  cast_set dom_addr_eq (dom_cast my_dom_aux Hva d).
+Definition D2Z (d : domain my_dom_aux (v_subst my_vt vty_int)) : Z :=
+  dom_cast my_dom_aux Hvi d.
+
+Lemma cast_set_scast {A B:Set} (H:A=B) x : cast_set H x = scast H x.
+Proof. destruct H; reflexivity. Qed.
+
+Lemma term_rep_tvar (vv: val_vars my_pd my_vt) (t:term) (x:vsymbol) (ty:vty)
+  (Ht : term_has_type gamma t ty) (Hx : t = Tvar x) :
+  exists (E : v_subst my_vt (snd x) = v_subst my_vt ty),
+    term_rep gamma_valid my_pd my_pdf my_vt my_pf vv t ty Ht = dom_cast (dom_aux my_pd) E (vv x).
+Proof. subst t. eexists. rewrite term_rep_equation_3. cbv zeta. unfold var_to_dom. reflexivity. Qed.
+
+Lemma argval (P:predsym) (Hsp : s_params P = []) (vv: val_vars my_pd my_vt) (ts: list term)
+  (Hval : formula_typed gamma (Fpred P [] ts)) (i:nat) (x:vsymbol)
+  (Hi : (i < Datatypes.length (s_args P))%nat) (Hnth : nth i ts tm_d = Tvar x) :
+  exists (E : v_subst my_vt (snd x) = nth i (sym_sigma_args P []) s_int),
+    hnth i (pred_arg_list my_pd my_vt P [] ts
+              (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval) s_int (dom_int my_pd)
+    = dom_cast (dom_aux my_pd) E (vv x).
+Proof.
+  unfold pred_arg_list.
+  pose (Heq := arg_list_hnth_eq P (eq_sym (f_equal (map vty_var) Hsp)) Hi my_vt).
+  pose (Hty := arg_list_hnth_ty (proj1' (pred_val_inv Hval))
+                                (proj2' (proj2' (pred_val_inv Hval))) Hi).
+  destruct (term_rep_tvar vv (nth i ts tm_d) x _ Hty Hnth) as [E' HE'].
+  exists (eq_trans E' Heq). etransitivity.
+  { apply (get_arg_list_hnth my_pd my_vt P [] ts
+      (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv)
+      (@term_rep_irrel gamma gamma_valid my_pd my_pdf my_pf my_vt vv)
+      (s_params_Nodup P) (proj1' (pred_val_inv Hval))
+      (proj1' (proj2' (pred_val_inv Hval))) (proj2' (proj2' (pred_val_inv Hval)))
+      i Hi Heq Hty). }
+  rewrite HE'. rewrite dom_cast_compose. reflexivity.
+Qed.
+
+Lemma posval (P:predsym) (Hsp : s_params P = []) (vv: val_vars my_pd my_vt) (ts: list term)
+  (Hval : formula_typed gamma (Fpred P [] ts)) (i:nat) (x:vsymbol)
+  (Hi : (i < Datatypes.length (s_args P))%nat) (Hnth : nth i ts tm_d = Tvar x)
+  (HP : sym_sigma_args P [] = pred_srts) :
+  exists (E : v_subst my_vt (snd x) = nth i pred_srts s_int),
+    hnth i (cast_arg_list HP (pred_arg_list my_pd my_vt P [] ts
+              (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)) s_int (dom_int my_pd)
+    = dom_cast (dom_aux my_pd) E (vv x).
+Proof.
+  destruct (argval P Hsp vv ts Hval i x Hi Hnth) as [E0 HE0].
+  exists (eq_trans E0 (cast_nth_eq HP i s_int)).
+  rewrite hnth_cast_arg_list.
+  transitivity (scast (f_equal (domain (dom_aux my_pd)) (cast_nth_eq HP i s_int))
+                  (dom_cast (dom_aux my_pd) E0 (vv x))).
+  { f_equal. exact HE0. }
+  unfold dom_cast. rewrite scast_scast. apply scast_eq_uip.
+Qed.
+
+Lemma collapseA (E : v_subst my_vt addr_ty = addr_sort)
+  (y : domain my_dom_aux (v_subst my_vt addr_ty)) :
+  cast_set dom_addr_eq (dom_cast (dom_aux my_pd) E y) = D2A y.
+Proof. unfold D2A. f_equal. unfold dom_cast. apply scast_eq_uip. Qed.
+
+Lemma collapseZ (E : v_subst my_vt vty_int = s_int)
+  (y : domain my_dom_aux (v_subst my_vt vty_int)) :
+  cast_set dom_int_eq (dom_cast (dom_aux my_pd) E y) = D2Z y.
+Proof.
+  unfold D2Z. rewrite cast_set_scast. unfold dom_cast. rewrite scast_scast.
+  apply scast_eq_uip.
+Qed.
+
+Lemma my_preds_inc (vv: val_vars my_pd my_vt)
+  (Hval : formula_typed gamma (Fpred included_ps []
+            [Tvar p_vs; Tvar lp_vs; Tvar q_vs; Tvar lq_vs])) :
+  my_preds included_ps [] (pred_arg_list my_pd my_vt included_ps []
+     [Tvar p_vs; Tvar lp_vs; Tvar q_vs; Tvar lq_vs]
+     (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)
+  = includedb (D2A (vv p_vs)) (D2Z (vv lp_vs)) (D2A (vv q_vs)) (D2Z (vv lq_vs)).
+Proof.
+  unfold my_preds.
+  destruct (predsym_eq_dec included_ps included_ps) as [Heqp|Hne]; [|exfalso; now apply Hne].
+  rewrite (UIP_dec predsym_eq_dec Heqp eq_refl). simpl.
+  set (ARGS := pred_arg_list my_pd my_vt included_ps []
+        [Tvar p_vs; Tvar lp_vs; Tvar q_vs; Tvar lq_vs]
+        (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval).
+  unfold get4.
+  destruct (posval included_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] Hval 0 p_vs  ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E0 H0].
+  destruct (posval included_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] Hval 1 lp_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E1 H1].
+  destruct (posval included_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] Hval 2 q_vs  ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E2 H2].
+  destruct (posval included_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] Hval 3 lq_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E3 H3].
+  fold ARGS in H0, H1, H2, H3.
+  change (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS))
+    with (hnth 0 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS)))
+    with (hnth 1 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS))))
+    with (hnth 2 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS)))))
+    with (hnth 3 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  rewrite H0, H1, H2, H3. unfold dom_to_addr, dom_to_Z.
+  f_equal; [ apply collapseA | apply collapseZ | apply collapseA | apply collapseZ ].
+Qed.
+
+Lemma my_preds_sep_qr (vv: val_vars my_pd my_vt)
+  (Hval : formula_typed gamma (Fpred separated_ps [] [Tvar q_vs; Tvar lq_vs; Tvar r_vs; Tvar lr_vs])) :
+  my_preds separated_ps [] (pred_arg_list my_pd my_vt separated_ps []
+     [Tvar q_vs; Tvar lq_vs; Tvar r_vs; Tvar lr_vs]
+     (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)
+  = separatedb (D2A (vv q_vs)) (D2Z (vv lq_vs)) (D2A (vv r_vs)) (D2Z (vv lr_vs)).
+Proof.
+  unfold my_preds.
+  destruct (predsym_eq_dec separated_ps included_ps) as [Hbad|_]; [exfalso; inversion Hbad|].
+  destruct (predsym_eq_dec separated_ps separated_ps) as [Heqp|Hne]; [|exfalso; now apply Hne].
+  rewrite (UIP_dec predsym_eq_dec Heqp eq_refl). simpl.
+  set (ARGS := pred_arg_list my_pd my_vt separated_ps []
+        [Tvar q_vs; Tvar lq_vs; Tvar r_vs; Tvar lr_vs]
+        (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval).
+  unfold get4.
+  destruct (posval separated_ps eq_refl vv [Tvar q_vs;Tvar lq_vs;Tvar r_vs;Tvar lr_vs] Hval 0 q_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E0 H0].
+  destruct (posval separated_ps eq_refl vv [Tvar q_vs;Tvar lq_vs;Tvar r_vs;Tvar lr_vs] Hval 1 lq_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E1 H1].
+  destruct (posval separated_ps eq_refl vv [Tvar q_vs;Tvar lq_vs;Tvar r_vs;Tvar lr_vs] Hval 2 r_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E2 H2].
+  destruct (posval separated_ps eq_refl vv [Tvar q_vs;Tvar lq_vs;Tvar r_vs;Tvar lr_vs] Hval 3 lr_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E3 H3].
+  fold ARGS in H0, H1, H2, H3.
+  change (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS))
+    with (hnth 0 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS)))
+    with (hnth 1 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS))))
+    with (hnth 2 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS)))))
+    with (hnth 3 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  rewrite H0, H1, H2, H3. unfold dom_to_addr, dom_to_Z.
+  f_equal; [ apply collapseA | apply collapseZ | apply collapseA | apply collapseZ ].
+Qed.
+
+Lemma my_preds_sep_pr (vv: val_vars my_pd my_vt)
+  (Hval : formula_typed gamma (Fpred separated_ps [] [Tvar p_vs; Tvar lp_vs; Tvar r_vs; Tvar lr_vs])) :
+  my_preds separated_ps [] (pred_arg_list my_pd my_vt separated_ps []
+     [Tvar p_vs; Tvar lp_vs; Tvar r_vs; Tvar lr_vs]
+     (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)
+  = separatedb (D2A (vv p_vs)) (D2Z (vv lp_vs)) (D2A (vv r_vs)) (D2Z (vv lr_vs)).
+Proof.
+  unfold my_preds.
+  destruct (predsym_eq_dec separated_ps included_ps) as [Hbad|_]; [exfalso; inversion Hbad|].
+  destruct (predsym_eq_dec separated_ps separated_ps) as [Heqp|Hne]; [|exfalso; now apply Hne].
+  rewrite (UIP_dec predsym_eq_dec Heqp eq_refl). simpl.
+  set (ARGS := pred_arg_list my_pd my_vt separated_ps []
+        [Tvar p_vs; Tvar lp_vs; Tvar r_vs; Tvar lr_vs]
+        (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval).
+  unfold get4.
+  destruct (posval separated_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar r_vs;Tvar lr_vs] Hval 0 p_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E0 H0].
+  destruct (posval separated_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar r_vs;Tvar lr_vs] Hval 1 lp_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E1 H1].
+  destruct (posval separated_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar r_vs;Tvar lr_vs] Hval 2 r_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E2 H2].
+  destruct (posval separated_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar r_vs;Tvar lr_vs] Hval 3 lr_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E3 H3].
+  fold ARGS in H0, H1, H2, H3.
+  change (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS))
+    with (hnth 0 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS)))
+    with (hnth 1 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS))))
+    with (hnth 2 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS)))))
+    with (hnth 3 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  rewrite H0, H1, H2, H3. unfold dom_to_addr, dom_to_Z.
+  f_equal; [ apply collapseA | apply collapseZ | apply collapseA | apply collapseZ ].
+Qed.
+
+(* ===================================================================== *)
+(*  Leg-1 obligation CLOSED (§5.4a): the coqwp lemma IS what Why3 means.   *)
+(*  Helper lemmas (all axiom-free modulo the framework's standard base):   *)
+(*   term_rep_tvar/argval/posval  -- compute the denotation of a Tvar      *)
+(*     predicate-argument list through the dependent dom_cast layers;       *)
+(*   collapseA/collapseZ          -- the get4 cast tower = the carrier      *)
+(*     projections D2A/D2Z;                                                 *)
+(*   my_preds_inc/_sep_qr/_sep_pr -- my_preds on the actual argument lists  *)
+(*     = includedb/separatedb of the projected values;                     *)
+(*   D2A_inv/D2Z_inv              -- D2A/D2Z are bijections (A2D/Z2D);      *)
+(*   substi_eq/substi_neq         -- the six bound-variable lookups;        *)
+(*  then includedb_iff/separatedb_iff + implb close the equivalence and the *)
+(*  D2A/D2Z bijection reindexes forall-over-domain as forall-over-addr.     *)
+(* ===================================================================== *)
+Definition A2D (a:addr) : domain my_dom_aux (v_subst my_vt addr_ty) :=
+  dom_cast my_dom_aux (eq_sym Hva) (cast_set (eq_sym dom_addr_eq) a).
+Definition Z2D (z:Z) : domain my_dom_aux (v_subst my_vt vty_int) :=
+  dom_cast my_dom_aux (eq_sym Hvi) z.
+Lemma D2A_inv (a:addr) : D2A (A2D a) = a.
+Proof. unfold D2A, A2D. rewrite dom_cast_twice. rewrite !cast_set_scast.
+  rewrite scast_scast. apply scast_refl_uip. Qed.
+Lemma D2Z_inv (z:Z) : D2Z (Z2D z) = z.
+Proof. unfold D2Z, Z2D. rewrite dom_cast_twice. reflexivity. Qed.
+
+Lemma substi_eq (vv:val_vars my_pd my_vt) (x:vsymbol) (y:domain my_dom_aux (v_subst my_vt (snd x))) :
+  substi my_pd my_vt vv x y x = y.
+Proof. unfold substi. destruct (vsymbol_eq_dec x x) as [e|n]; [|exfalso; now apply n].
+  rewrite (UIP_dec vsymbol_eq_dec e eq_refl). reflexivity. Qed.
+Lemma substi_neq (vv:val_vars my_pd my_vt) (x z:vsymbol) (y:domain my_dom_aux (v_subst my_vt (snd x))) :
+  z <> x -> substi my_pd my_vt vv x y z = vv z.
+Proof. intro H. unfold substi. destruct (vsymbol_eq_dec z x) as [e|n]; [exfalso; now apply H|reflexivity]. Qed.
+
+Ltac slook := repeat (rewrite substi_eq || (rewrite substi_neq by (intro Hc; inversion Hc))).
+Ltac slookin H := repeat (rewrite substi_eq in H || (rewrite substi_neq in H by (intro Hc; inversion Hc))).
+
+Theorem sep_trans_faithful :
+  @formula_rep gamma gamma_valid my_pd my_pdf my_vt my_pf my_vv
+    sep_trans_fmla sep_trans_typed = true
+  <-> sep_trans_prop.
+Proof.
+  unfold sep_trans_fmla, sep_trans_body. simpl_rep_full.
+  rewrite allb; repeat setoid_rewrite allb.
+  unfold sep_trans_prop. split.
+  - intros H p q r lp lq lr Hinc Hsep.
+    specialize (H (A2D p) (A2D q) (A2D r) (Z2D lp) (Z2D lq) (Z2D lr)).
+    rewrite my_preds_inc, my_preds_sep_qr, my_preds_sep_pr in H.
+    slookin H. rewrite !D2A_inv, !D2Z_inv in H. unfold is_true in H.
+    rewrite includedb_iff in Hinc. rewrite separatedb_iff in Hsep.
+    rewrite Hinc in H. simpl in H. rewrite Hsep in H. simpl in H.
+    apply separatedb_iff. exact H.
+  - intros H d d0 d1 d2 d3 d4.
+    rewrite my_preds_inc, my_preds_sep_qr, my_preds_sep_pr. slook. unfold is_true.
+    destruct (includedb (D2A d) (D2Z d2) (D2A d0) (D2Z d3)) eqn:Eic; simpl; [|reflexivity].
+    destruct (separatedb (D2A d0) (D2Z d3) (D2A d1) (D2Z d4)) eqn:Esq; simpl; [|reflexivity].
+    rewrite <- separatedb_iff.
+    apply (H (D2A d) (D2A d0) (D2A d1) (D2Z d2) (D2Z d3) (D2Z d4)).
+    + rewrite <- includedb_iff in Eic. exact Eic.
+    + rewrite <- separatedb_iff in Esq. exact Esq.
+Qed.

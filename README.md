@@ -144,7 +144,7 @@ rename happened at 9.0, so 8.20.1 is still "Coq" and 9.x is "Rocq"):
 | Concern | Toolchain | CI-gated? |
 |---|---|---|
 | coqwp trust root incl. π (`*_hardened.v`) | Coq 8.20.1 + coq-interval 4.11.4 | Yes — `axiom-wp.yml` `coq` job |
-| leg-1 dual-TP semantic anchoring (`Model.v`) | Rocq 9.0 + coq-elpi / MathComp 2.5 | Yes — `axiom-wp.yml` `leg1` job, which builds the semantics and model (axiom-free). The obligation's final cast-cancellation lemma is documented but not yet a theorem, so this gates the infrastructure, not the completed proof. |
+| leg-1 dual-TP semantic anchoring (`Model.v`) | Rocq 9.0 + coq-elpi / MathComp 2.5 | Yes — `axiom-wp.yml` `leg1` job builds the semantics + model and the closed obligation. The pilot lemma's obligation is the theorem `sep_trans_faithful` (`formula_rep … = true ↔ sep_trans_prop`), axiom-clean. Combined with leg 2 (`dualtp/`), `Memory.separated_trans` is dual-TP **certified**. |
 
 ## Quick start
 
