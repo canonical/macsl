@@ -1,16 +1,18 @@
-# Leg 1 (semantic Why3↔Coq) — `Memory.separated_trans` feasibility spike
+# Leg 1 (semantic Why3↔Coq) — `Memory.separated_trans`, `Memory.included_trans`
 
-Leg 1 of the dual-TP (`../../docs/frama-c-dual-tp-spec.md` §4, §5.4a) anchors the Coq
+Leg 1 of the dual-TP (`../../docs/frama-c-dual-tp-spec.md` §4, §5.4a) anchors each Coq
 realization lemma to **what Why3 means**, by proving — inside Coq, against the
-Cohen–Johnson-Freyd denotational semantics —
+Cohen–Johnson-Freyd denotational semantics — that the lemma is the denotation of its
+Why3 formula (`L_Coq ⟺ formula_rep … ⟦Why3(L)⟧`).
 
-> `separated_trans_Coq  ⟺  formula_rep … ⟦Why3(separated_trans)⟧`
+**CLOSED for two `Memory` lemmas** (`Model.v`, both axiom-clean — `Print Assumptions` =
+the why3-semantics framework's standard base only):
+- `sep_trans_faithful` : `formula_rep … sep_trans_fmla = true ↔ sep_trans_prop`;
+- `included_trans_faithful` : `formula_rep … inc_trans_fmla = true ↔ included_trans_prop`.
 
-This file records leg 1 for the pilot lemma. **It is now CLOSED:** the obligation
-`formula_rep … sep_trans_fmla = true ↔ sep_trans_prop` is the theorem
-`sep_trans_faithful` in `Model.v` (axiom-clean — `Print Assumptions` = the
-why3-semantics framework's standard base only). The build path and ground-truth
-notes below are kept for the record; see the Status checklist for the live state.
+`included_trans` reuses the same model + helper lemmas as `separated_trans` (it has three
+`included` predicate applications rather than one `included` + two `separated`). The build
+path and ground-truth notes below are kept for the record; see the Status checklist.
 
 ## 1. Ground truth `Why3(L)` — extracted, and it matches both proofs
 `why3-separated_trans.mlw` is the **verbatim** WP Why3 source
@@ -105,14 +107,14 @@ which must stay pinned for the coqwp/frama-c work. Then resume at §4–§5. Eve
 ## 5. Status of the steps
 1. Toolchain (Rocq-9.0 isolated switch `dualtp-leg1-r9`): **DONE** (`BUILD.md`).
 2. why3-semantics vendored + built (`rocq-9.0` branch, pinned `d75ba4c`): **DONE**.
-3. AST→`formula` bridge `sep_trans_fmla`, `gamma_valid`, `sep_trans_typed`: **DONE**.
-4. Bridge **round-trip check** (pretty-print `sep_trans_fmla` back through Why3, diff vs
+3. AST→`formula` bridges (`sep_trans_fmla`/`inc_trans_fmla`, `gamma_valid`, `*_typed`): **DONE**.
+4. Bridge **round-trip check** (pretty-print the `formula` back through Why3, diff vs
    `why3-separated_trans.mlw`, spec §5.8): **optional hardening, not yet done**.
-5. The §4 obligation `Coq(L) ⟺ formula_rep …`: **DONE** — `sep_trans_faithful`,
-   axiom-clean (`Print Assumptions` = the framework's standard base).
-6. CI: the `leg1` job in `.github/workflows/axiom-wp.yml` builds `Model.vo` (so the proof
-   is gated) and guards against `Admitted`/`admit`/`Axiom`/`Abort`. With leg 2 (`dualtp/`)
-   also passing, `Memory.separated_trans` is **dual-TP certified**.
+5. The §4 obligation `Coq(L) ⟺ formula_rep …`: **DONE** — `sep_trans_faithful` and
+   `included_trans_faithful`, axiom-clean (`Print Assumptions` = the framework's standard base).
+6. CI: the `leg1` job in `.github/workflows/axiom-wp.yml` builds `Model.vo` (so the proofs
+   are gated) and guards against `Admitted`/`admit`/`Axiom`/`Abort`. With leg 2 (`dualtp/`)
+   also passing, `Memory.separated_trans` and `Memory.included_trans` are **dual-TP certified**.
 
 ## Status
 - [x] Ground-truth `Why3(L)` extracted; Why3≡Coq≡Lean confirmed by inspection.

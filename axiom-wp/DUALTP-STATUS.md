@@ -25,7 +25,7 @@ pilot is reduced to one cast lemma). Full certification needs both legs.
 
 | Family | Coq | Lean | 3-way crosscheck | Certified? |
 |---|---|---|---|---|
-| `Memory` (11 lemmas: separation/inclusion/eqmem/havoc/table + 3 addr↔Z bijection) | `Memory_hardened.v` | 8 `leanwp/Memory.lean` + 3 bijection `leanwp/realfloat/RealFloat.lean` (11/11) | leg 2 ✓ for `separated_trans`/`included_trans`/`separated_included` (`dualtp/`); **leg 1 ✓ for `separated_trans`** (`leg1/Model.v::sep_trans_faithful`) | `separated_trans` **CERTIFIED** (both legs); rest **partial** |
+| `Memory` (11 lemmas: separation/inclusion/eqmem/havoc/table + 3 addr↔Z bijection) | `Memory_hardened.v` | 8 `leanwp/Memory.lean` + 3 bijection `leanwp/realfloat/RealFloat.lean` (11/11) | leg 2 ✓ for `separated_trans`/`included_trans`/`separated_included` (`dualtp/`); **leg 1 ✓ for `separated_trans` + `included_trans`** (`leg1/Model.v::sep_trans_faithful`, `::included_trans_faithful`) | `separated_trans`, `included_trans` **CERTIFIED** (both legs); rest **partial** |
 | `Vset` (11 lemmas) | `Vset_hardened.v` | `leanwp/Vset.lean` (11/11) | leg 2: out of FOL fragment (`dualtp` `OUT_OF_FRAGMENT`) | **partial** |
 | `Cfloat` (32 lemmas) | `Cfloat_hardened.v` | `leanwp/realfloat/Cfloat.lean` (32/32) | leg 2: out of FOL fragment | **partial** |
 | `ArcTrigo` (2) / `ExpLog` (1) | `*_hardened.v` | `leanwp/realfloat/RealFloat.lean` (3/3) | leg 2: out of FOL fragment | **partial** |
@@ -58,13 +58,18 @@ Lemmas whose statement leaves the FOL fragment (Cfloat float predicates, Vset se
 record-constructor equality of `separated_1`, the transcendental applications) are honestly listed in
 `dualtp/pairs.OUT_OF_FRAGMENT` — not silently passed; extending the canonicalizer to them is future work.
 
-**Leg 1 (semantic Why3↔Coq, §5.4a) — CLOSED for the pilot.** `leg1/Model.v::sep_trans_faithful` is now a
-**theorem**: `formula_rep … sep_trans_fmla = true ↔ sep_trans_prop`, axiom-clean (no `Admitted`; the
-`Print Assumptions` footprint is exactly the framework's standard base — `eq_rect_eq`,
-`functional_extensionality`, `classic`, `constructive_indefinite_description`, `sig_forall_dec`; no
-custom/behavioural axioms). With leg 2 also passing for `Memory.separated_trans`, the pilot lemma is
-**dual-TP CERTIFIED** (both legs). The remaining `Memory`/`Vset`/reals lemmas stay **partial** until their
-own leg-1 obligations are built (leg 2 covers the FOL-fragment ones already).
+**Leg 1 (semantic Why3↔Coq, §5.4a) — CLOSED for two `Memory` lemmas.** `leg1/Model.v` now proves two
+faithfulness theorems, both axiom-clean (no `Admitted`; `Print Assumptions` = the framework's standard
+base only — `eq_rect_eq`, `functional_extensionality`, `classic`, `constructive_indefinite_description`,
+`sig_forall_dec`; no custom/behavioural axioms):
+- `sep_trans_faithful` : `formula_rep … sep_trans_fmla = true ↔ sep_trans_prop`;
+- `included_trans_faithful` : `formula_rep … inc_trans_fmla = true ↔ included_trans_prop`.
+
+With leg 2 also passing, `Memory.separated_trans` and `Memory.included_trans` are **dual-TP CERTIFIED**
+(both legs). The shared leg-1 machinery (`term_rep_tvar`/`argval`/`posval`/`collapseA`/`collapseZ`/
+`my_preds_inc`(+`_qr`/`_pr`)/`my_preds_sep_*`/`D2A_inv`/`D2Z_inv`/`substi_*`) is reusable; the remaining
+`Memory`/`Vset`/reals lemmas stay **partial** until their own obligations are built (leg 2 already covers
+the FOL-fragment ones).
 
 **Leg 1 (semantic Why3↔Coq anchoring, spec §5.4a) — substantial progress, see the Leg 1 section below.**
 The stronger *semantic* check (Coq `separated_trans_Coq` ⟺ `formula_rep` of the Why3 AST, against the
@@ -80,7 +85,7 @@ axiom set (what the `lean` skill's Quality Gate accepts). The spec's earlier "co
 (`by_cases`, `Int`), so `leanwp/check.sh` and `../docs/frama-c-dual-tp-spec.md §6` use the standard set and name it
 honestly. This is exactly the code-vs-doc alignment the PyCSL audit flagged — applied here from day one.
 
-## Leg 1 (semantic Why3↔Coq) — CLOSED for the pilot (Rocq 9.0): `sep_trans_faithful` is a theorem
+## Leg 1 (semantic Why3↔Coq) — CLOSED for `separated_trans` + `included_trans` (Rocq 9.0)
 
 **Status 2026-06-21 (hand-off).** The coq-elpi blocker is RESOLVED via the **Rocq-9.0 route**: the
 why3-semantics `rocq-9.0` branch builds on an isolated `dualtp-leg1-r9` switch (rocq-elpi **3.4.0** /
@@ -100,8 +105,11 @@ transitional rocq-elpi 3.2.0-on-Coq-8.20). `proofs/core` 33/33 .vo (incl. `Types
   reduces the obligation `formula_rep … sep_trans_fmla = true ↔ sep_trans_prop` to the concrete goal
   `(∀ d..d4, implb (my_preds included_ps [] (pred_arg_list ..)) (implb ..)) ↔ sep_trans_prop`.
 
-**CLOSED — `sep_trans_faithful` (a theorem).** The cast-cancellation is fully discharged in
-`leg1/Model.v`. The chain: `term_rep_tvar`/`argval`/`posval` compute the denotation of each `Tvar`
+**CLOSED — `sep_trans_faithful` and `included_trans_faithful` (theorems).** The cast-cancellation is fully
+discharged in `leg1/Model.v`; `included_trans` reuses the same machinery (it differs only in having three
+`included` predicate applications instead of one `included` + two `separated`, so it rewrites with
+`my_preds_inc`/`my_preds_inc_qr`/`my_preds_inc_pr` and reflects via `includedb_iff`). The chain:
+`term_rep_tvar`/`argval`/`posval` compute the denotation of each `Tvar`
 predicate argument through the dependent `dom_cast` layers (`get_arg_list_hnth` + `term_rep_irrel` +
 `term_rep_equation_3`); `collapseA`/`collapseZ` reduce the `get4` eq_rect tower to the carrier
 projections `D2A`/`D2Z` (via `scast_scast`/`scast_eq_uip`/`UIP_dec`); `my_preds_inc`/`_sep_qr`/`_sep_pr`

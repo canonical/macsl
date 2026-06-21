@@ -1,7 +1,7 @@
 (* Leg 1 -- the concrete model interpretation for the separated_trans obligation. *)
 From Stdlib Require Import ZArith.
 From Proofs Require Import core.Types core.Syntax core.Context core.Interp
-                           core.Domain core.Denotational core.IndTypes.
+                           core.Domain core.Denotational core.IndTypes core.Typechecker.
 Require Import Leg1.SeparatedTrans.
 Set Bullet Behavior "Strict Subproofs".
 Open Scope Z_scope.
@@ -420,4 +420,111 @@ Proof.
     apply (H (D2A d) (D2A d0) (D2A d1) (D2Z d2) (D2Z d3) (D2Z d4)).
     + rewrite <- includedb_iff in Eic. exact Eic.
     + rewrite <- separatedb_iff in Esq. exact Esq.
+Qed.
+
+Lemma my_preds_inc_qr (vv: val_vars my_pd my_vt)
+  (Hval : formula_typed gamma (Fpred included_ps [] [Tvar q_vs; Tvar lq_vs; Tvar r_vs; Tvar lr_vs])) :
+  my_preds included_ps [] (pred_arg_list my_pd my_vt included_ps []
+     [Tvar q_vs; Tvar lq_vs; Tvar r_vs; Tvar lr_vs]
+     (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)
+  = includedb (D2A (vv q_vs)) (D2Z (vv lq_vs)) (D2A (vv r_vs)) (D2Z (vv lr_vs)).
+Proof.
+  unfold my_preds.
+  destruct (predsym_eq_dec included_ps included_ps) as [Heqp|Hne]; [|exfalso; now apply Hne].
+  rewrite (UIP_dec predsym_eq_dec Heqp eq_refl). simpl.
+  set (ARGS := pred_arg_list my_pd my_vt included_ps []
+        [Tvar q_vs; Tvar lq_vs; Tvar r_vs; Tvar lr_vs]
+        (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval).
+  unfold get4.
+  destruct (posval included_ps eq_refl vv [Tvar q_vs;Tvar lq_vs;Tvar r_vs;Tvar lr_vs] Hval 0 q_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E0 H0].
+  destruct (posval included_ps eq_refl vv [Tvar q_vs;Tvar lq_vs;Tvar r_vs;Tvar lr_vs] Hval 1 lq_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E1 H1].
+  destruct (posval included_ps eq_refl vv [Tvar q_vs;Tvar lq_vs;Tvar r_vs;Tvar lr_vs] Hval 2 r_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E2 H2].
+  destruct (posval included_ps eq_refl vv [Tvar q_vs;Tvar lq_vs;Tvar r_vs;Tvar lr_vs] Hval 3 lr_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E3 H3].
+  fold ARGS in H0, H1, H2, H3.
+  change (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS))
+    with (hnth 0 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS)))
+    with (hnth 1 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS))))
+    with (hnth 2 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS)))))
+    with (hnth 3 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  rewrite H0, H1, H2, H3. unfold dom_to_addr, dom_to_Z.
+  f_equal; [ apply collapseA | apply collapseZ | apply collapseA | apply collapseZ ].
+Qed.
+
+Lemma my_preds_inc_pr (vv: val_vars my_pd my_vt)
+  (Hval : formula_typed gamma (Fpred included_ps [] [Tvar p_vs; Tvar lp_vs; Tvar r_vs; Tvar lr_vs])) :
+  my_preds included_ps [] (pred_arg_list my_pd my_vt included_ps []
+     [Tvar p_vs; Tvar lp_vs; Tvar r_vs; Tvar lr_vs]
+     (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)
+  = includedb (D2A (vv p_vs)) (D2Z (vv lp_vs)) (D2A (vv r_vs)) (D2Z (vv lr_vs)).
+Proof.
+  unfold my_preds.
+  destruct (predsym_eq_dec included_ps included_ps) as [Heqp|Hne]; [|exfalso; now apply Hne].
+  rewrite (UIP_dec predsym_eq_dec Heqp eq_refl). simpl.
+  set (ARGS := pred_arg_list my_pd my_vt included_ps []
+        [Tvar p_vs; Tvar lp_vs; Tvar r_vs; Tvar lr_vs]
+        (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval).
+  unfold get4.
+  destruct (posval included_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar r_vs;Tvar lr_vs] Hval 0 p_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E0 H0].
+  destruct (posval included_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar r_vs;Tvar lr_vs] Hval 1 lp_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E1 H1].
+  destruct (posval included_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar r_vs;Tvar lr_vs] Hval 2 r_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E2 H2].
+  destruct (posval included_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar r_vs;Tvar lr_vs] Hval 3 lr_vs ltac:(cbn;lia) eq_refl (sym_args_inc [])) as [E3 H3].
+  fold ARGS in H0, H1, H2, H3.
+  change (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS))
+    with (hnth 0 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS)))
+    with (hnth 1 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS))))
+    with (hnth 2 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_inc [])) ARGS)))))
+    with (hnth 3 (cast_arg_list (sym_args_inc []) ARGS) s_int (dom_int my_pd)).
+  rewrite H0, H1, H2, H3. unfold dom_to_addr, dom_to_Z.
+  f_equal; [ apply collapseA | apply collapseZ | apply collapseA | apply collapseZ ].
+Qed.
+
+(* ===================================================================== *)
+(*  Leg 1 for Memory.included_trans (same model; three included preds).    *)
+(* ===================================================================== *)
+Definition inc_trans_body : formula :=
+  Fbinop Timplies (app_inc p_vs lp_vs q_vs lq_vs)
+    (Fbinop Timplies (app_inc q_vs lq_vs r_vs lr_vs)
+                     (app_inc p_vs lp_vs r_vs lr_vs)).
+Definition inc_trans_fmla : formula :=
+  Fquant Tforall p_vs (Fquant Tforall q_vs (Fquant Tforall r_vs
+  (Fquant Tforall lp_vs (Fquant Tforall lq_vs (Fquant Tforall lr_vs inc_trans_body))))).
+Lemma inc_trans_typed : formula_typed gamma inc_trans_fmla.
+Proof.
+  apply (elimT (typecheck_formula_correct gamma inc_trans_fmla)).
+  vm_compute; reflexivity.
+Qed.
+
+Definition included_trans_prop : Prop :=
+  forall (p q r:addr) (lp lq lr:Z),
+    included p lp q lq -> included q lq r lr -> included p lp r lr.
+
+Theorem included_trans_faithful :
+  @formula_rep gamma gamma_valid my_pd my_pdf my_vt my_pf my_vv
+    inc_trans_fmla inc_trans_typed = true
+  <-> included_trans_prop.
+Proof.
+  unfold inc_trans_fmla, inc_trans_body. simpl_rep_full.
+  rewrite allb; repeat setoid_rewrite allb.
+  unfold included_trans_prop. split.
+  - intros H p q r lp lq lr H1 H2.
+    specialize (H (A2D p) (A2D q) (A2D r) (Z2D lp) (Z2D lq) (Z2D lr)).
+    rewrite my_preds_inc, my_preds_inc_qr, my_preds_inc_pr in H.
+    slookin H. rewrite !D2A_inv, !D2Z_inv in H. unfold is_true in H.
+    rewrite includedb_iff in H1. rewrite includedb_iff in H2.
+    rewrite H1 in H. simpl in H. rewrite H2 in H. simpl in H.
+    apply includedb_iff. exact H.
+  - intros H d d0 d1 d2 d3 d4.
+    rewrite my_preds_inc, my_preds_inc_qr, my_preds_inc_pr. slook. unfold is_true.
+    destruct (includedb (D2A d) (D2Z d2) (D2A d0) (D2Z d3)) eqn:E1; simpl; [|reflexivity].
+    destruct (includedb (D2A d0) (D2Z d3) (D2A d1) (D2Z d4)) eqn:E2; simpl; [|reflexivity].
+    rewrite <- includedb_iff.
+    apply (H (D2A d) (D2A d0) (D2A d1) (D2Z d2) (D2Z d3) (D2Z d4)).
+    + rewrite <- includedb_iff in E1. exact E1.
+    + rewrite <- includedb_iff in E2. exact E2.
 Qed.
