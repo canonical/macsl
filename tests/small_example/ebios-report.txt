@@ -116,24 +116,21 @@ discipline.
 
 ---
 
-## Provenance & assurance status (ebios-sl loop)
+## Provenance & assurance status
 
-This report was produced by the `ebios-sl` code-disjoint squeeze loop (config/skills/ebios-sl), whose
-load-bearing invariant is that the **scenario author is barriered from the implementation**: W1–W4 were
-authored solely from the mission / threat model (the functional intent of `specification.md` §1–5), never
-from the implementation source. A **disjoint completeness/realism reviewer** — also code-blind — produced
-an independent threat enumeration; its coverage gaps (privilege escalation FE9, silent audit saturation
-FE10, token reuse/leakage spoofing FE11, the malicious-privileged-insider risk origin RO7) were folded
-back in one amendment round. The §6 HAPPY-policy list of `specification.md` was deliberately withheld from
-both actors so the scenarios are an exogenous reading of the *threat*, not a mirror of the existing
-verification — the overlap between this report and those policies is therefore a *validation*, not a
-circular input.
+This risk study was developed independently of the implementation. Workshops W1–W4 were written
+from the system's mission and threat model (the functional intent of `specification.md` §1–5), not
+from the source code, so the scenarios assess the threat rather than mirror the code. An independent
+review, also conducted without access to the source, produced a separate threat enumeration; its
+additional findings (privilege escalation FE9, silent audit saturation FE10, token reuse/leakage
+FE11, and the malicious-privileged-insider risk origin RO7) were incorporated in one amendment
+round. The §6 HAPPY-policy list in `specification.md` was withheld during authoring, so the overlap
+between this report and the verified policies is a validation rather than a circular input.
 
-- **MACHINE-DONE (Gate B):** `./ebios-lint.sh macsl/tests/small_example/ebios-report.txt` — structure +
-  coverage + endogeneity tripwire green. (Run it to reproduce.)
-- **DEPENDENCY: human reviewer (Gate C realism + terminus) — SATISFIED.** Content realism/completeness
-  has no machine oracle. The disjoint reviewer's critique was applied, and the **risk owner has signed**
-  the residual-risk acceptance (W5 sign-off: Fabrice Derepas, APPROVED, 2026-06-20). The study is now
-  **DONE** (MACHINE-DONE = suite 32/32 + `ebios-lint` green; DONE = the sign-off above).
-- **Scales:** severity G1–G4, likelihood V1–V4, per ANSSI's EBIOS RM (4/4/3). Method attributed to ANSSI
-  / Club EBIOS.
+- Structure and coverage: `./ebios-lint.sh macsl/tests/small_example/ebios-report.txt` passes
+  (structure, chaining, severities/likelihoods, and the no-code-artifacts check). Run it to
+  reproduce.
+- Human sign-off: content realism and completeness have no automated oracle. The risk owner reviewed
+  and signed the residual-risk acceptance (W5 sign-off: Fabrice Derepas, APPROVED, 2026-06-20).
+- Scales: severity G1–G4, likelihood V1–V4, per ANSSI's EBIOS RM (4/4/3). Method attributed to
+  ANSSI / Club EBIOS.

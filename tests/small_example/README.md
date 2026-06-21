@@ -1,28 +1,49 @@
-# small_example — the flagship HAPPY/STRIDE target
+# small_example — the HAPPY/STRIDE example target
 
-A banking-style backend (authenticate / transfer / audit over a tiny HTTP layer) and the **HAPPY**
-policies that secure it. This is the **flagship example** for `macsl`: it shows security policies
-(1) attached to **realistic** libc-using code, (2) **proved** on a crisp compliant core, and
-(3) **caught going red** on deliberate violations — across **all seven HAPPY families**
-(H-T, H-R, H-S, H-E, H-I1, H-I2, H-D), i.e. the full six STRIDE letters S/T/R/I/D/E. Those three jobs
-are split across three `.c` files on purpose —
-each is load-bearing; none is redundant.
+A banking-style backend (authenticate / transfer / audit over a small HTTP layer) and the
+HAPPY policies that secure it. It is the main worked example for `macsl`: it shows security
+policies (1) attached to realistic libc-using code, (2) proved on a compliant core, and
+(3) caught going red on deliberate violations, across all seven HAPPY families
+(H-T, H-R, H-S, H-E, H-I1, H-I2, H-D), i.e. the six STRIDE letters S/T/R/I/D/E. Those three
+jobs are split across three `.c` files on purpose; each is needed and none is redundant.
 
-The [EBIOS RM risk report](ebios-report.txt) for the core-banking server, was authored by a code-blind
-agent from the spec's mission alone and hardened by a disjoint code-blind reviewer, leaving only human
-risk-owner sign-off outstanding.
+The verdicts below are what carry trust: every policy result is discharged by Frama-C/WP
+and re-checkable by re-running the proofs (see [Run](#run)). The accompanying EBIOS RM risk
+study ([`ebios-report.txt`](ebios-report.txt), conformance report
+[`ebios-crosswalk.md`](ebios-crosswalk.md)) was developed from the system's mission and
+specification independently of the source, so the threat model is not shaped by the code it
+assesses, and was reviewed and signed off by a human risk owner.
 
-Then two nested loops of agents annotated the code and generated the [conformance report](ebios-crosswalk.md).
-Three gaps were spotted after the first iteration of the loop:
-- FE10 silent audit saturation (G4, High) — headline. nonrepud_complete is proved only under `requires 0 <= audit_len < 1024`. The EBIOS-feared case — log full, transfers keep succeeding unlogged — is outside the proved envelope; the precondition assumes the threat away.
-- FE2 horizontal RBAC (G4, High). "A User may debit only their own account" is enforced in transfer's body but is not asserted as a HAPPY hyperproperty — code-enforced, not machine-verified.
-- FE11 token lifecycle (G3, Moderate). Expiry/revocation/query-string leakage are the declared trusted boundary — honest scope limit, not a defect.
+Comparing the study against the verification surfaced three gaps:
 
-**FE2 closed** by a new HAPPY policy asserting the horizontal-RBAC rule ("a role-2 caller may debit only their own account") as a WP-discharged hyperproperty, with the matching attack RED — see [rbac_horizontal.c](rbac_horizontal.c).
+- FE10 silent audit saturation (G4, High). `nonrepud_complete` is proved only under
+  `requires 0 <= audit_len < 1024`. The feared case (log full, transfers still succeeding
+  unlogged) is outside the proved envelope; the precondition assumes it away.
+- FE2 horizontal RBAC (G4, High). "A user may debit only their own account" is enforced in
+  `transfer`'s body but was not asserted as a HAPPY hyperproperty: code-enforced, not
+  machine-verified.
+- FE11 token lifecycle (G3, Moderate). Expiry, revocation, and query-string leakage are the
+  declared trusted boundary: a scope limit, not a defect.
 
-**FE10 closed** by making the audit discipline **fail-closed**: a transfer that cannot record itself must refuse, so non-repudiation (a balance changed ⇒ the log grew) holds **even at capacity**. `main.c`'s real `transfer` now carries the fail-closed guard (runtime remediation of an actual latent defect — unlike FE2 the code did *not* previously enforce it), and the at-capacity theorem is proved on [audit_saturation.c](audit_saturation.c), with the silent-saturation attack RED.
+FE2 was closed by a new HAPPY policy asserting the horizontal-RBAC rule (a role-2 caller may
+debit only their own account) as a WP-discharged hyperproperty, with the matching attack
+RED; see [rbac_horizontal.c](rbac_horizontal.c).
 
-**FE11 — discipline half closed, strength half stays trusted.** FE11 splits in two: (a) token *unguessability* and the expiry *clock* are irreducibly the **trusted boundary** (spec §6) — macsl does not prove a mock token is unguessable; (b) the lifecycle *discipline* — a revoked/expired/replayed token must not **authorize** an operation — is check-before-use, and is now the verified policy `token_live`: a protected op runs only against a *currently-valid* token, proved on [token_lifecycle.c](token_lifecycle.c) with the replay attack RED. (`main.c`'s `authn` already binds its capability to live validity via the `get_role(token) != -1` request-time lookup.) The irreducible (a) half remains the accepted residual the risk owner signs.
+FE10 was closed by making the audit discipline fail-closed: a transfer that cannot record
+itself must refuse, so non-repudiation (a balance changed implies the log grew) holds even
+at capacity. `main.c`'s `transfer` now carries the fail-closed guard (a runtime fix for an
+actual latent defect; unlike FE2, the code did not previously enforce it), and the
+at-capacity theorem is proved on [audit_saturation.c](audit_saturation.c), with the
+silent-saturation attack RED.
+
+FE11 is half closed and half remains a trusted assumption. (a) Token unguessability and the
+expiry clock are irreducibly the trusted boundary (spec §6); macsl does not prove a mock
+token is unguessable. (b) The lifecycle discipline (a revoked, expired, or replayed token
+must not authorize an operation) is check-before-use, now the verified policy `token_live`:
+a protected op runs only against a currently-valid token, proved on
+[token_lifecycle.c](token_lifecycle.c) with the replay attack RED. (`main.c`'s `authn`
+already binds its capability to live validity via the `get_role(token) != -1` request-time
+lookup.) The (a) half remains the accepted residual that the risk owner signs.
 
 
 ## The three files and their roles
@@ -31,17 +52,17 @@ Three gaps were spotted after the first iteration of the loop:
 |---|---|---|---|
 | **`main.c`** | **Realistic integration** | A full HTTP server (three routes) using real libc — `strtok`/`strcmp`/`strncpy`, `read`/`write`, `socket`/`accept`, variadic `snprintf`/`sscanf` — carrying the audit log + `log_transfer`. **Five policies are instrumented here on the real code** — the four banking ones (H-R `nonrepud_complete`, H-R `nonrepud_append_only`, H-T `bal_integrity`, H-S `authn`) plus **H-E `priv_monotonic`**. | `nonrepud_complete` **1/1** on `transfer`; `bal_integrity` **50/50** across the non-exempt functions; `authn` **1/1** (call-site check in `handle_client`); `priv_monotonic` **1/1** on `transfer`. `nonrepud_append_only` (full `AuditRecord` equality) is **context-bloated** on this big function, so its frame is proved **deterministically on an isolated driver** (`audit_append_frame.c`, see note). The *whole file* isn't all-green (the routes need loop invariants + libc specs) — which is exactly why `compliant.c` exists. |
 | **`compliant.c`** | **Compliant core (the positive proof)** | A focused, fully-contracted distillation of `main.c`'s security-relevant core (accounts, audit log, `authenticate`, `log_transfer`, `transfer`, a confidential `pin`, a `check` verifier, and a bounded request handler) carrying **seven policies across six families** (H-R ×2, H-S, H-T, H-I1, H-I2, H-D). The unambiguous "every policy holds" artifact. | **63/63** — all green. |
-| **`attacks.c`** | **Negative controls (the teeth)** | **Eleven attacks**, **one per policy** (incl. the two H-E forms `escalate`/`transfer_cross`, FE10 `transfer_unlogged_atcap`, and FE11 `replay_endpoint`), each violating exactly one and nothing else. Proves the policies are **non-vacuous** — a green that cannot go red proves nothing. | **70/81** — exactly **eleven** goals red, one per attack. |
+| `attacks.c` | Negative controls | Eleven attacks, one per policy (including the two H-E forms `escalate`/`transfer_cross`, FE10 `transfer_unlogged_atcap`, and FE11 `replay_endpoint`), each violating exactly one and nothing else. Shows the policies are non-vacuous: a green that cannot go red proves nothing. | 70/81, with exactly eleven goals red, one per attack. |
 
-**Why three, not one.** `main.c` answers *"do the policies attach to real-world code?"* (yes — the
-libc layer is **not** "out of WP's reach"). `compliant.c` answers *"do the policies hold?"* on a core
-small enough to be **fully green and unambiguous**. `attacks.c` answers *"do the policies have
-teeth?"* — and that question has no home in `main.c`, which is the *compliant* backend and contains no
-violations by design. `compliant.c` + `attacks.c` are a **matched compliant/attack pair** (same
-`#define`s, same policy text); the contrast between all-green compliant code and the targeted reds is
-the actual assurance argument. Collapsing them would either lose the crisp green control or lose the
-teeth. (H-E is the one policy whose compliant proof lives on `main.c` rather than `compliant.c` — its
-attack `escalate` still sits with the other negative controls.)
+Why three files, not one: `main.c` answers whether the policies attach to real-world code (they
+do; the libc layer is not out of WP's reach). `compliant.c` answers whether the policies hold, on
+a core small enough to be fully green and unambiguous. `attacks.c` answers whether the policies are
+non-vacuous, a question that has no home in `main.c` (the compliant backend contains no violations by
+design). `compliant.c` and `attacks.c` are a matched compliant/attack pair (same `#define`s, same
+policy text); the contrast between all-green compliant code and the targeted reds is the assurance
+argument. Collapsing them would lose either the green control or the negative controls. (H-E is the
+one policy whose compliant proof lives on `main.c` rather than `compliant.c`; its attack `escalate`
+still sits with the other negative controls.)
 
 ## The policies
 
@@ -64,7 +85,7 @@ H-D**) — the full six STRIDE letters (S/T/R/I/D/E). Three families now carry m
 an EBIOS crosswalk gap: **H-R** — completeness (`nonrepud_complete`), append-only
 (`nonrepud_append_only`), at-capacity (`nonrepud_atcap`, FE10); **H-S** — check-before-use (`authn`) and
 token-lifecycle (`token_live`, FE11 discipline); **H-E** — *vertical* (`priv_monotonic`) and *horizontal*
-(`rbac_own_account`, FE2). No family is left to `happy-roadmap.md` only.
+(`rbac_own_account`, FE2). No family is left to `../../docs/happy-roadmap.md` only.
 
 **On `availability` (H-D).** `\context(\total)` adds a `terminates` clause WP must discharge from the
 function's `loop variant`(s); bundled with `-wp-rte` it is the "never hangs, never crashes" theorem over
