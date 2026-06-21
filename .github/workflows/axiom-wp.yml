@@ -1,6 +1,6 @@
 name: axiom-wp dual-TP
 
-# Gate axiom-wp's trust root with BOTH provers (see frama-c-dual-tp-spec.md):
+# Gate axiom-wp's trust root with BOTH provers (see ../../docs/frama-c-dual-tp-spec.md):
 #   - coqwp/check.sh : every *_hardened.v compiles, no Admitted/admit, and every
 #     lemma is "Closed under the global context" or within its allowed standard axioms.
 #   - leanwp/check.sh: every dual-TP twin compiles and its #print axioms is a subset
@@ -68,6 +68,20 @@ jobs:
         run: opam exec -- sh -c 'coqc --version | head -1; why3 --version; opam list coq-interval 2>/dev/null | tail -1'
       - name: Run coqwp gate
         run: opam exec -- bash axiom-wp/coqwp/check.sh
+
+  # Leg 2 of the dual-TP cross-check (../../docs/frama-c-dual-tp-spec.md §5.4b, §5.7): the
+  # syntactic Coq<->Lean canonicalizer + its adversarial corpus + the per-lemma
+  # canon(Coq)==canon(Lean) cross-check. Pure Python, fail-closed.
+  dualtp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run dualtp leg-2 gate (canonicalizer corpus + Coq<->Lean cross-check)
+        run: bash axiom-wp/dualtp/check.sh
 
   lean:
     runs-on: ubuntu-latest
