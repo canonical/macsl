@@ -24,7 +24,7 @@ of truth for "what is done"; if a letter is missing or unmarked here, that is a 
 | **D** Denial of service | H-D | totality + no-fault | `\total` (+ `-wp-rte`) | `phase6/` | 33–34 (+28–29) | shipped; flagship parser partial, `\fuel` TODO |
 | **E** Elevation of privilege | H-E | privilege monotonicity | `\postcond` + `\diff` | `phase3/` | 15–17 | shipped |
 
-Caveats are honest scope, not omissions — see `../happy-roadmap.md` §4 (H-D), §7 (H-I2), §9 (gaps
+Caveats are honest scope, not omissions — see `../docs/happy-roadmap.md` §4 (H-D), §7 (H-I2), §9 (gaps
 GH1–GH6). Test-dir numbering = implementation milestone order (phase0=T … **phase6=D**); it is a
 different axis from the roadmap §0 "macsl phase" column (see the roadmap's *Phase numbering* note).
 

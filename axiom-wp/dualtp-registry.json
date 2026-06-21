@@ -1,5 +1,5 @@
 {
-  "_comment": "Dual Coq+Lean cross-validation registry (see ../frama-c-dual-tp-spec.md). One entry per trust-bearing lemma. 'status' is honest per side; a lemma is dual-TP CERTIFIED only when coq+lean are verified AND crosscheck_3way is 'pass'. The 3-way structural cross-check tooling (dualtp/) is not yet built — see DUALTP-STATUS.md.",
+  "_comment": "Dual Coq+Lean cross-validation registry (see ../docs/frama-c-dual-tp-spec.md). One entry per trust-bearing lemma. 'status' is honest per side; a lemma is dual-TP CERTIFIED only when coq+lean are verified AND crosscheck_3way is 'pass'. The 3-way structural cross-check tooling (dualtp/) is not yet built — see DUALTP-STATUS.md.",
   "lemmas": [
     {
       "qualname": "Memory.separated_trans",

@@ -7,7 +7,7 @@ Frama-C and ACSL manuals for their full meaning.
 **Hyperproperty Analysis for Program PolicY** — the policy framework macsl implements. The rename and
 re-scope of MetAcsl's **HILARE**. A HAPPY policy states a global property once; macsl expands it into
 per-site assertions. Long-term, HAPPY aims at one property family per STRIDE category
-(`../happy-roadmap.md`); Phase 0 delivers write confinement.
+(`../docs/happy-roadmap.md`); Phase 0 delivers write confinement.
 
 ### HILARE
 MetAcsl's name for its meta-property mechanism. macsl renames it HAPPY (and keeps the surface
@@ -148,7 +148,7 @@ code was written.
 ### STRIDE (H-T … H-I2)
 The threat taxonomy (Spoofing, Tampering, Repudiation, Information disclosure, Denial of service,
 Elevation of privilege). HAPPY's roadmap maps one property family to each; the codes `H-T … H-I2` are
-defined in `../happy-roadmap.md`. **All six implemented:** **H-T** (Tampering / write confinement),
+defined in `../docs/happy-roadmap.md`. **All six implemented:** **H-T** (Tampering / write confinement),
 **H-I1** (Information disclosure, first half / read confinement), **H-R** (Repudiation / audit-log
 completeness + append-only), **H-E** (Elevation of privilege / privilege monotonicity), **H-S**
 (Spoofing / check-before-use capabilities), and **H-I2** (Information disclosure, second half /

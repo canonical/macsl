@@ -4,7 +4,7 @@
    Frama-C 32.1 / Why3 1.8.2 (the `framac-coq8` switch). `addr` line 15;
    `included` line 76; `separated` line 81; `lemma separated_trans` line 107.
 
-   This is `Why3(L)` in the spec's sense (frama-c-dual-tp-spec.md §4): the formula
+   This is `Why3(L)` in the spec's sense (../../docs/frama-c-dual-tp-spec.md §4): the formula
    WP actually emits/uses — independent of WP's Coq driver. Leg 1 proves
    `Coq(separated_trans) <-> formula_rep <this>` against the Cohen-Johnson-Freyd
    semantics. NOTE: the `[ ... ]` is an SMT trigger annotation — purely a prover

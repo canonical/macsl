@@ -1,6 +1,6 @@
 # Leg 1 (semantic Why3↔Coq) — `Memory.separated_trans` feasibility spike
 
-Leg 1 of the dual-TP (`../../frama-c-dual-tp-spec.md` §4, §5.4a) anchors the Coq
+Leg 1 of the dual-TP (`../../docs/frama-c-dual-tp-spec.md` §4, §5.4a) anchors the Coq
 realization lemma to **what Why3 means**, by proving — inside Coq, against the
 Cohen–Johnson-Freyd denotational semantics —
 

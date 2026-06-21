@@ -22,7 +22,7 @@ The apparent "no-op" was two **invocation-order** mistakes, not a plugin bug:
 So macsl is **not** "MetAcsl, fixed." Its reasons to exist are:
 
 - **A footgun-free CLI** — the failure above is a real usability trap. macsl removes it by design (§2).
-- **The rename HILARE → HAPPY** and the **STRIDE roadmap** (`../happy-roadmap.md`).
+- **The rename HILARE → HAPPY** and the **STRIDE roadmap** (`happy-roadmap.md`).
 - A small, self-contained codebase we control as the base for the STRIDE policy families.
 
 ## 2. The one design decision: instrument in place, after the AST is computed
@@ -123,4 +123,4 @@ changed the facts:
 - **`apply_after_computed`, not `Boot.Main.extend`** — the impl plan's in-place idea was right; the
   concrete hook is the after-AST-computed one, which is what actually removes the footgun.
 - **`happy` only, no `meta` alias** — so macsl coexists with an installed MetAcsl.
-- Scope trimmed to `\writing` + separation predicates for Phase 0; the rest is `../happy-roadmap.md`.
+- Scope trimmed to `\writing` + separation predicates for Phase 0; the rest is `happy-roadmap.md`.

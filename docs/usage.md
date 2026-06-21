@@ -166,7 +166,7 @@ the secret (`ensures \result == attempt + stored`) makes the relational assert *
 > **What read confinement is and is NOT.** `\separated(\read, R)` proves no non-exempt code path
 > *syntactically reads* region `R`. It is **not** noninterference — it says nothing about what an
 > exempt reader does with the secret downstream. That stronger, relational property is **H-I2**
-> (`../happy-roadmap.md`), which needs self-composition; conflating the two would be a
+> (`happy-roadmap.md`), which needs self-composition; conflating the two would be a
 > "coherent-and-wrong" claim.
 
 ## Options
@@ -195,7 +195,7 @@ misdiagnosis (see [design.md](design.md)).
 ## Limitations (Phases 0–1)
 
 - Contexts implemented: `\writing` (H-T) and `\reading` (H-I1). `\calling`/invariants and the
-  `\fguard`/`\tguard` guards are on the roadmap (`../happy-roadmap.md`).
+  `\fguard`/`\tguard` guards are on the roadmap (`happy-roadmap.md`).
 - **Read sites** = lvalues occurring inside expressions (rvalues, conditions, call args, return,
   and offset indices). A read of `R` through the *index* of a write target — e.g. `a[secret_i] = 0` —
   is covered (the index `i` is an expression); but address-taken reads (`&R`) are deliberately not

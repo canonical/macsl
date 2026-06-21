@@ -1,6 +1,6 @@
 /-
   Memory.lean — Lean 4 twin of WP's coqwp `Memory` realization lemmas.
-  Pilot for the dual Coq+Lean cross-validation (see ../../frama-c-dual-tp-spec.md).
+  Pilot for the dual Coq+Lean cross-validation (see ../../docs/frama-c-dual-tp-spec.md).
 
   VERIFIED: Lean 4.31.0, `lean Memory.lean` exit 0, and
   `#print axioms separated_trans` = [propext, Classical.choice, Quot.sound]
@@ -9,7 +9,7 @@
   global context". Both sides of the pilot now hold.
 
   The statement is structurally identical to the Coq twin and to WP's Why3 goal
-  — that equality is what the 3-way cross-check (../../frama-c-dual-tp-spec.md
+  — that equality is what the 3-way cross-check (../../docs/frama-c-dual-tp-spec.md
   §5.4) will enforce once the `dualtp` tooling is built (still TODO; see
   ../DUALTP-STATUS.md). Definitions mirror Memory_hardened.v verbatim
   (Coq `Z` ↦ Lean `Int`).

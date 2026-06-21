@@ -5,7 +5,7 @@
 #   - every `#print axioms` line is a subset of the standard Lean kernel axioms
 #     {propext, Classical.choice, Quot.sound}.
 # FAIL-CLOSED: if the Lean toolchain is absent, exit non-zero (INFRA-MISSING) —
-# a missing prover must NEVER read as PASS (see ../../frama-c-dual-tp-spec.md §5.6).
+# a missing prover must NEVER read as PASS (see ../../docs/frama-c-dual-tp-spec.md §5.6).
 # Usage: source "$HOME/.elan/env" first (or have `lean` on PATH), then ./check.sh
 set -u
 cd "$(dirname "$0")"
