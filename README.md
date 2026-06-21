@@ -1,5 +1,7 @@
 # macsl
 
+[![axiom-wp dual-TP](https://github.com/canonical/macsl/actions/workflows/axiom-wp.yml/badge.svg)](https://github.com/canonical/macsl/actions/workflows/axiom-wp.yml)
+
 **macsl** is a Frama-C plugin that checks **HAPPY** properties. Happy stands for Hyperproperty Analysis for Program
 PolicY. The six [STRIDE](https://en.wikipedia.org/wiki/STRIDE_model) families are supported. The principle is
 to state a global write-confinement property once, and macsl instruments every matching
@@ -91,6 +93,24 @@ CoqInterval**, in both `Trigonometry_hardened.v` and the patched original (`Qed`
 gains a build-time `coq-interval` dependency). The remaining work is the parallel **Lean**
 cross-validation (`axiom-wp/leanwp/`, [`axiom-wp/DUALTP-STATUS.md`](axiom-wp/DUALTP-STATUS.md)): a
 future `Why3 ≡ Coq ≡ Lean` 3-way check.
+
+## Two toolchains: Coq 8.20.1 (coqwp) and Rocq 9.0 (leg-1)
+
+macsl uses **two distinct Coq/Rocq toolchains** for two distinct concerns — don't conflate them
+(the Coq→Rocq rename happened at **9.0**; `8.20.1` is still legitimately "Coq", `9.x` is "Rocq"):
+
+- **Coq 8.20.1** — the **coqwp trust root** (the `*_hardened.v` files, incl. the π bound proved with
+  CoqInterval). This must match **Frama-C 32.1**'s WP Coq realization library — that is the TCB of
+  every `frama-c -wp-prover coq` green — so it is pinned to Coq 8.20.1 / Why3 1.8.2.
+- **Rocq 9.0** — the **leg-1 dual-TP semantic anchoring** (`leg1/Model.v` + the vendored
+  `joscoh/why3-semantics`). We use Rocq 9 here *only because we must*: that formalization needs
+  MathComp 2.x → Hierarchy Builder → coq-elpi, which will not build on the Coq-8.20 pin. It lives in
+  a **separate, isolated opam switch** (`leg1/BUILD.md`) and never touches the 8.20 toolchain.
+
+| Concern | Toolchain | CI-gated? |
+|---|---|---|
+| coqwp trust root incl. π (`*_hardened.v`) | Coq 8.20.1 + coq-interval 4.11.4 | ✅ `axiom-wp.yml` **`coq`** job |
+| leg-1 dual-TP semantic anchoring (`Model.v`) | Rocq 9.0 + coq-elpi / MathComp 2.5 | ✅ `axiom-wp.yml` **`leg1`** job — builds the semantics + model (axiom-free); the obligation's final cast-cancellation lemma is documented, not yet a theorem, so this gates the **infrastructure**, not the completed proof |
 
 ## Quick start
 

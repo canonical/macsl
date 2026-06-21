@@ -36,8 +36,15 @@ jobs:
           opam install -y why3.1.8.2
           test -f "$(opam exec -- why3 --print-libdir)/coq/BuiltIn.vo" \
             || { echo "::error::Why3 Coq realizations missing (BuiltIn.vo); Coq must precede Why3"; exit 1; }
+      # Trigonometry_hardened.v discharges Pi_double_precision_bounds with CoqInterval.
+      # Re-assert coq.8.20.1 / why3.1.8.2 in the install so the extra packages
+      # (coquelicot/flocq/mathcomp/bignums) cannot upgrade the pinned toolchain.
+      - name: Install CoqInterval (Trigonometry_hardened.v)
+        run: |
+          opam repo add coq-released https://coq.inria.fr/opam/released || true
+          opam install -y coq-interval coq.8.20.1 why3.1.8.2
       - name: Versions
-        run: opam exec -- sh -c 'coqc --version | head -1; why3 --version'
+        run: opam exec -- sh -c 'coqc --version | head -1; why3 --version; opam list coq-interval 2>/dev/null | tail -1'
       - name: Run coqwp gate
         run: opam exec -- bash axiom-wp/coqwp/check.sh
 
@@ -54,3 +61,43 @@ jobs:
         run: lean --version
       - name: Run leanwp gate (fail-closed)
         run: bash axiom-wp/leanwp/check.sh
+
+  # Leg 1 (dual-TP semantic Why3<->Coq anchoring) builds on Rocq 9.0 -- a SEPARATE
+  # toolchain from the coqwp gate above (Coq 8.20.1): the joscoh/why3-semantics
+  # formalization needs MathComp 2.x -> Hierarchy Builder -> coq-elpi, which will not
+  # build on the Coq-8.20 pin. This job gates that the semantics + the leg-1 model
+  # (SeparatedTrans.v + Model.v) build and stay axiom-free. The obligation's final
+  # cast-cancellation lemma is documented (not yet a theorem), so this gates the
+  # INFRASTRUCTURE, not the completed proof. why3-semantics is vendored at a pinned
+  # commit (it is gitignored, not stored in this repo).
+  leg1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "4.14"
+      - name: Install Rocq 9.0 toolchain (coq-elpi / MathComp 2.5 / Equations / std++ / ext-lib)
+        run: |
+          opam repo add rocq-released https://rocq-prover.org/opam/released || true
+          opam repo add coq-released  https://coq.inria.fr/opam/released   || true
+          opam install -y dune coq.9.0.1 coq-elpi coq-mathcomp-ssreflect coq-equations coq-stdpp coq-ext-lib
+      - name: Axiom-free guard (no Admitted/admit/Axiom/Abort in leg-1 sources)
+        run: |
+          if grep -nE 'Admitted|\badmit\b|^Axiom|Abort' axiom-wp/leg1/SeparatedTrans.v axiom-wp/leg1/Model.v; then
+            echo "::error::leg-1 source has a proof hole"; exit 1
+          fi
+      - name: Vendor joscoh/why3-semantics (rocq-9.0 branch, pinned)
+        run: |
+          git clone --quiet https://github.com/joscoh/why3-semantics.git "$RUNNER_TEMP/why3sem"
+          git -C "$RUNNER_TEMP/why3sem" checkout --quiet a69026c
+          mkdir -p "$RUNNER_TEMP/why3sem/leg1"
+          cp axiom-wp/leg1/SeparatedTrans.v axiom-wp/leg1/Model.v "$RUNNER_TEMP/why3sem/leg1/"
+          cp axiom-wp/leg1/dune.leg1-theory "$RUNNER_TEMP/why3sem/leg1/dune"
+      - name: Versions
+        run: opam exec -- sh -c 'coqc --version | head -1; opam list coq-elpi coq-mathcomp-ssreflect 2>/dev/null | tail -2'
+      - name: Build leg-1 model (semantics core + SeparatedTrans + Model)
+        run: |
+          cd "$RUNNER_TEMP/why3sem"
+          opam exec -- dune build leg1/SeparatedTrans.vo leg1/Model.vo
