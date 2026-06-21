@@ -67,5 +67,13 @@ check_file ArcTrigo_hardened.v 'functional_extensionality|sig_forall_dec' \
 check_file ExpLog_hardened.v 'functional_extensionality|sig_forall_dec' \
   exp_pos
 
+# Trigonometry: Pi_double_precision_bounds via CoqInterval. All-standard footprint:
+# classical logic (Classical_Prop.classic, ClassicalDedekindReals.sig_*), functional
+# extensionality, and Coq native 63-bit integer primitives (PrimInt63/Uint63) used by
+# CoqInterval's reflective computation. No custom/behavioural axioms. (Needs coq-interval.)
+check_file Trigonometry_hardened.v \
+  'functional_extensionality|sig_forall_dec|sig_not_dec|Classical_Prop|PrimInt63|Uint63' \
+  Pi_double_precision_bounds
+
 [ "$rc" -eq 0 ] && echo "ALL OK" || echo "FAILURES"
 exit $rc

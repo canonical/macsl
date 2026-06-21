@@ -30,6 +30,13 @@ the 3-way structural equality check (`dualtp/`, spec §5.4) that would prove `Wh
 relying on human eyeballing. Until that tool exists and gates, this lemma is **partial**, not certified —
 do not report it as fully dual-TP.
 
+**Leg 1 (semantic Why3↔Coq anchoring, spec §5.4a) — substantial progress, see the Leg 1 section below.**
+The stronger *semantic* check (Coq `separated_trans_Coq` ⟺ `formula_rep` of the Why3 AST, against the
+joscoh denotational semantics) now has the why3-semantics built on Rocq 9.0, the `[[separated_trans]]`
+formula term constructed, a complete concrete model interpretation (`leg1/Model.v`, axiom-free), and the
+obligation reduced to **one open UIP/cast-cancellation lemma** (handed off for an interactive session).
+Not certified until that lemma closes; do not report leg 1 as complete.
+
 ## Lean axiom bar — note (matches the PyCSL audit finding P1-1)
 The verified Lean proof depends on `{propext, Classical.choice, Quot.sound}` — the **standard** Lean kernel
 axiom set (what the `lean` skill's Quality Gate accepts). The spec's earlier "constructive" wording
@@ -37,24 +44,69 @@ axiom set (what the `lean` skill's Quality Gate accepts). The spec's earlier "co
 (`by_cases`, `Int`), so `leanwp/check.sh` and `frama-c-dual-tp-spec.md §6` use the standard set and name it
 honestly. This is exactly the code-vs-doc alignment the PyCSL audit flagged — applied here from day one.
 
-## Leg 1 (semantic Why3↔Coq) — spike DONE, build BLOCKED on coq-elpi
+## Leg 1 (semantic Why3↔Coq) — model BUILT (Rocq 9.0); obligation reduced to one cast lemma (HAND-OFF)
+
+**Status 2026-06-21 (hand-off).** The coq-elpi blocker is RESOLVED via the **Rocq-9.0 route**: the
+why3-semantics `rocq-9.0` branch builds on an isolated `dualtp-leg1-r9` switch (rocq-elpi **3.4.0** /
+HB 1.10.2 / MathComp 2.5 / Equations / std++ / ext-lib — clean; the `.cmxs` failure was purely
+transitional rocq-elpi 3.2.0-on-Coq-8.20). `proofs/core` 33/33 .vo (incl. `Types`[HB], `Syntax`,
+`Denotational`/`formula_rep`), no errors. Build steps: `leg1/BUILD.md`; `framac-coq8` untouched.
+
+**DONE (compiles, axiom-free — no `Admitted`/`admit`/`Axiom`/`Abort`):**
+- `leg1/SeparatedTrans.v` (135 lines): substrate usable downstream; coqwp `Memory` defs re-stated in
+  Rocq 9; **`separated_trans_Coq` PROVED**; `sep_trans_fmla : formula` built from the real Syntax
+  constructors; **`gamma_valid : valid_context gamma`** + **`sep_trans_typed : formula_typed`**
+  (both machine-checked by the framework's deciders).
+- `leg1/Model.v` (188 lines): the **complete concrete model interpretation** — `my_pd` (`pi_dom`,
+  addr-sort↦Coq `addr`), `my_pdf` (`pi_dom_full`, vacuous adts), **`my_pf` (`pi_funpred`) with the
+  REAL `preds`** (dependent `arg_list` extraction → `includedb`/`separatedb`); boolean predicates +
+  `includedb_iff`/`separatedb_iff`; `my_vt`/`my_vv`/`sep_trans_prop`; and **`allb`** which (verified)
+  reduces the obligation `formula_rep … sep_trans_fmla = true ↔ sep_trans_prop` to the concrete goal
+  `(∀ d..d4, implb (my_preds included_ps [] (pred_arg_list ..)) (implb ..)) ↔ sep_trans_prop`.
+
+**OPEN — one lemma, handed off for an interactive Coq session.** Compute
+`my_preds included_ps [] (pred_arg_list .. [Tvar a;..] (term_rep .. vv')) = includedb (vv' a) ..`
+(and the `separated` analogue). It is a genuine **UIP/cast-cancellation** proof, NOT mere bookkeeping:
+the framework's decidable equalities on `sort`/`typesym` (sig-types + proof-field records) don't reduce
+under conversion, so `domain my_dom_aux addr_sort` is only *propositionally* `= addr` and
+`sym_sigma_args included_ps [] = pred_srts` holds via `sort_inj`; the three cast layers
+(`cast_set` ⊕ `term_rep`'s `dom_cast` ⊕ `get_arg_list_hnth`'s `dom_cast`) must cancel via
+`UIP_dec` + `dom_cast_refl`/`dom_cast_eq`, then `term_rep (Tvar x) = dom_cast (var_to_dom vv' x)`
+connects to the bound `d_i`, closing with `includedb_iff`/`separatedb_iff` + `implb`. Recipe is in
+`Model.v` and `leg1/README.md`. `predsym_eq_dec included_ps included_ps` confirmed to reduce to
+`left e` (so `my_preds` enters the `includedb` branch).
+
+The original (now-historical) Coq-8.20 blocker writeup follows.
+
+
 See `leg1/`. Grounded: the verbatim `Why3(separated_trans)` is extracted
 (`leg1/why3-separated_trans.mlw`, from WP's `memaddr.mlw`), Why3≡Coq≡Lean confirmed
 by inspection; **fragment coverage PASS**. Toolchain update: the semantics has a
 **`coq-8.20` branch** — it builds on Coq 8.20.1 (no Rocq-9 split, contrary to the
 first spike). Coq + Equations + std++ + ext-lib install fine.
 
-**BLOCKER (this session):** building the semantics needs MathComp 2.x (`Types.v`
-uses `HB.instance`) → Hierarchy Builder → **coq-elpi**, and coq-elpi **fails to
-build in this environment** — identically across 2.3.0 / 2.5.2 / rocq-elpi 3.2.0:
-`elpi_plugin.cmxs: No such file` (environmental, version-independent; `ocamlopt`
-works). So `formula_rep` is unbuildable here and the obligation is **not started**.
-Resolve on a Coq-Platform / prebuilt-coq-elpi environment, then resume at
-`leg1/README.md` §5. No green is claimed.
+**BLOCKER (re-diagnosed 2026-06-21, precisely):** building the semantics needs
+MathComp 2.x (`Types.v` uses `HB.instance`) → Hierarchy Builder → **coq-elpi**, and
+coq-elpi cannot be added to the pinned Coq-8.20 `framac-coq8` switch. It is a
+**dependency trap around the pin**, NOT a missing native capability (the switch
+builds `.cmxs` and loads `coq-interval`'s native ML plugin fine):
+- Coq held at 8.20.1 ⇒ opam picks **rocq-elpi 3.2.0**, whose dune build **fails to
+  stage `elpi_plugin.cmxs`** → `Declare ML Module` in `theories/elpi.v` errors
+  `elpi_plugin.cmxs: No such file` (a rocq-elpi-3.2.0-on-coq-core-8.20 staging bug).
+- coq-elpi **2.x** (true 8.20 line) ⇒ downgrades `elpi` 3.4.2→2.0.7 + yojson/atd and
+  **recompiles frama-c 32.1 + frama-c-metacsl** (perturbs the pin).
+- coq-elpi **3.4.0** ⇒ needs **Rocq 9.0.1**, upgrading Coq off 8.20 (breaks coqwp+frama-c).
+So `formula_rep` is unbuildable *in this switch*; the obligation is **not started**.
+Resolve in a **dedicated/isolated switch** or the **Coq Platform** (prebuilt
+coq-elpi + MathComp 2.x); keep `framac-coq8` pinned. Resume at `leg1/README.md` §5.
+No green is claimed.
 
 ## Next (per spec §7)
-1. **Leg 1:** execute `leg1/README.md` §5 — vendor+build the full semantics under
-   Rocq 9, write `⟦separated_trans⟧` + the bridge round-trip, prove the obligation.
+1. **Leg 1 (semantics built; formula term + model done):** finish the one open
+   **UIP/cast-cancellation lemma** (`my_preds … = includedb/separatedb …`) in an
+   interactive Coq session to close `sep_trans_faithful` in `leg1/Model.v`; then add
+   the §5-step-4 bridge round-trip (print `sep_trans_fmla` back through Why3, diff vs
+   `leg1/why3-separated_trans.mlw`). Recipe: `leg1/Model.v` / `leg1/README.md`.
 2. **Leg 2:** build the `dualtp/` Coq↔Lean cross-check (extract Coq `Check` + Lean
    `#check` → shared IR → canonical `==`), **with its adversarial canonicalizer
    corpus** (spec §5.7) from the start.

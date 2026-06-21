@@ -144,9 +144,26 @@ lemmas `sin_asin`/`cos_acos`/`exp_pos` — the admitted axioms are simply **true
 Same `R`-axiomatization footing as `Cfloat` (only `sig_forall_dec` +
 `functional_extensionality`; no admits, no custom axioms).
 
+## Hardening DONE: `real/Trigonometry.v`'s `Pi_double_precision_bounds` (see `Trigonometry_hardened.v`)
+
+The one lemma `real/Trigonometry.v` left admitted ("to avoid a dependency on CoqInterval") — a
+1-ulp-at-2⁻⁵¹ bracket on π — is now proved with **CoqInterval** (`split; interval with (i_prec 70)`),
+both in the self-contained `Trigonometry_hardened.v` twin **and in the original `real/Trigonometry.v`
+itself** (the upstream `admit.` is replaced by `Qed.`; the original now `From Interval Require Import
+Tactic`, i.e. it gains a build-time dependency on `coq-interval`). Genuine result: π is Coq's own
+`Reals.Rtrigo1.PI`; the bounds are simply true.
+
+`Print Assumptions` footprint is **all standard Coq foundations, no custom/behavioural axioms**:
+classical logic (`Classical_Prop.classic`, `ClassicalDedekindReals.sig_forall_dec`/`sig_not_dec`),
+`functional_extensionality`, and Coq's **native 63-bit integer primitives** (`PrimInt63`/`Uint63` and
+their `*_spec` axioms) that CoqInterval's reflective computation uses — these are part of Coq's trusted
+kernel. `check.sh` whitelists exactly this set for `Trigonometry_hardened.v` and fails on any other.
+Toolchain note: this is the only hardening file that needs `coq-interval` in the switch.
+
 ## Hardening roadmap — COMPLETE
 
-All ~57 admitted lemmas across the vendored coqwp are now machine-checked:
+All **58** admitted trust-bearing lemmas across the vendored coqwp are now machine-checked
+(the 57 below + `real/Trigonometry.v::Pi_double_precision_bounds`):
 
 | File | lemmas | result |
 |---|---|---|
@@ -155,6 +172,7 @@ All ~57 admitted lemmas across the vendored coqwp are now machine-checked:
 | `Cfloat.v`   | 32 | no admits/custom axioms; 2 standard Reals axioms |
 | `ArcTrigo.v` | 2  | genuine; 2 standard Reals axioms |
 | `ExpLog.v`   | 1  | genuine; 2 standard Reals axioms |
+| `real/Trigonometry.v` | 1 | genuine (CoqInterval); standard classical+Reals+PrimInt63 axioms |
 
 CI gate: `.github/workflows/coqwp.yml` runs `./check.sh` on every push/PR that
 touches `coqwp/**` (Coq 8.20.1 + Why3 1.8.2 via opam; Coq installed before Why3

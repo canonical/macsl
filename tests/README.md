@@ -7,7 +7,26 @@ eval $(opam env --switch=framac-coq8)
 ./tests/run.sh
 ```
 
-Expected: `25 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E + 3 H-S + 3 H-I2 + 2 worked-example).
+Expected: `34 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E + 3 H-S + 3 H-I2 + 2 H-D + 9 worked-example).
+
+## STRIDE coverage status (authoritative map — read this first)
+
+Every STRIDE letter has a **shipped, prove/fail-tested** HAPPY family. This table is the single source
+of truth for "what is done"; if a letter is missing or unmarked here, that is a documentation bug
+(this table exists because the D row was once discoverable only inside the worked example).
+
+| STRIDE | HAPPY | Family | `\context` | Test dir | run.sh | Status |
+|---|---|---|---|---|---|---|
+| **S** Spoofing | H-S | check-before-use capability | `\precond` | `phase4/` | 18–20 | shipped |
+| **T** Tampering | H-T | write confinement | `\writing` + `\separated(\written,R)` | `phase0/` | 1–6 | shipped |
+| **R** Repudiation | H-R | audit completeness + append-only | `\postcond` | `phase2/` | 10–14 | shipped |
+| **I** Information disclosure | H-I1 / H-I2 | read confinement / noninterference | `\reading` / `\noninterference` | `phase1/`, `phase5/` | 7–9, 21–23 | shipped (H-I2 scoped: params only) |
+| **D** Denial of service | H-D | totality + no-fault | `\total` (+ `-wp-rte`) | `phase6/` | 33–34 (+28–29) | shipped; flagship parser partial, `\fuel` TODO |
+| **E** Elevation of privilege | H-E | privilege monotonicity | `\postcond` + `\diff` | `phase3/` | 15–17 | shipped |
+
+Caveats are honest scope, not omissions — see `../happy-roadmap.md` §4 (H-D), §7 (H-I2), §9 (gaps
+GH1–GH6). Test-dir numbering = implementation milestone order (phase0=T … **phase6=D**); it is a
+different axis from the roadmap §0 "macsl phase" column (see the roadmap's *Phase numbering* note).
 
 ## Why a shell runner and not ptests?
 
@@ -58,7 +77,13 @@ which clashes depending on load order. `run.sh` sidesteps that by running with
 | `noninterf_pos.c` | `\secret(stored)` on `check`; result `== attempt` (independent of secret) | synthesized twin proves (`3/3`) |
 | `noninterf_neg.c` | same; result `== attempt + stored` (leaks) | relational assert unproved (`2/3`) |
 
-### `small_example/` — worked example (H-R + H-S + H-T on one system)
+### `phase6/` — H-D denial of service (totality + no-fault, `\total`)
+| File | Policy | Expected |
+|---|---|---|
+| `totality_pos.c` | `\context(\total)` on an always-advancing parser | terminates + no-fault, all proved (`9/9`) |
+| `totality_neg.c` | same; confused parser advances only on odd `i` | `…_loop_variant_decrease` unproved (`8/9`) — the **negative control** |
+
+### `small_example/` — worked example (all seven HAPPY families, six STRIDE letters, on one system)
 | File | Role | Expected |
 |---|---|---|
 | `compliant.c` | compliant banking core, all four policies | `18/18` |

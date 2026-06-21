@@ -59,18 +59,36 @@ NOT need a separate Rocq-9 dev; the re-stated Memory defs (or the coqwp ones) li
 in one Coq world. `Types.v` uses `HB.instance` (Hierarchy Builder), so **MathComp
 2.x is required** (1.x won't do — checked).
 
-**BLOCKED (this session) — coq-elpi cannot build its native plugin here.** The full
-build was attempted in a dedicated `dualtp-sem` switch (Coq 8.20.1 + Equations +
-std++ + ext-lib all install fine). But **`coq-elpi` fails to build** — identically
-across **2.3.0, 2.5.2, and rocq-elpi 3.2.0**:
-`System error: ".../rocq-elpi/elpi/elpi_plugin.cmxs: No such file or directory"`.
-It is **environmental and version-independent** (not a leg-1 flaw): `ocamlopt.opt`
-is present and works, but coq-elpi's dune build never links the plugin `.cmxs`
-(`COQ_NATIVE_COMPILER_DEFAULT=no`). Since MathComp 2.x → Hierarchy Builder →
-coq-elpi, this transitively blocks building the semantics, hence `formula_rep`,
-hence the leg-1 obligation. **Resolution path:** build in an environment where
-coq-elpi/MathComp are prebuilt (the **Coq Platform** bundle, or a CI image with the
-platform), then resume at §4–§5. Everything *else* for leg 1 is grounded and ready.
+**RESOLVED (2026-06-21) via the Rocq-9.0 route — see `BUILD.md` and the Status checklist.**
+The blocker below is the *Coq-8.20* diagnosis (kept for the record); leg 1 now builds on an
+isolated Rocq-9.0 switch where rocq-elpi 3.4.0 builds cleanly. The remaining Coq-8.20 analysis:
+
+**BLOCKED — coq-elpi cannot be added to the pinned Coq-8.20 switch.** Re-diagnosed
+precisely (2026-06-21) in the `framac-coq8` switch itself (which is healthy: it
+builds native `.cmxs`, and `coq-interval`'s native ML-plugin loads fine — so the
+earlier "environmental, version-independent" note was imprecise). The real blocker
+is a **two-way dependency trap** around the Coq-8.20 pin:
+
+- With **Coq held at 8.20.1**, opam installs **rocq-elpi 3.2.0**, whose dune build
+  **does not stage `elpi_plugin.cmxs`** into the install tree; then `theories/elpi.v`'s
+  `Declare ML Module` makes `coqc` (native) fail with
+  `System error: ".../rocq-elpi/elpi/elpi_plugin.cmxs: No such file or directory"`.
+  This is a rocq-elpi-3.2.0-on-coq-core-8.20 **native-plugin staging bug**, *not* a
+  missing OCaml/native capability (`supports_shared_libraries: true`; `.cmxs` builds;
+  interval loads). The 3.2.0 package is the transitional Rocq-9-era one.
+- The genuinely **Coq-8.20-targeted coq-elpi 2.x** (e.g. 2.5.2) *would* build, but
+  installing it **downgrades `elpi` 3.4.2→2.0.7 + yojson/atd** and **recompiles
+  `frama-c` 32.1 + `frama-c-metacsl`** — i.e. it perturbs the pinned coqwp/frama-c
+  world. Not acceptable in this switch.
+- The modern **coq-elpi 3.4.0** needs **Rocq 9.0.1**, upgrading Coq off 8.20 →
+  breaks the entire 8.20-pinned coqwp + frama-c stack. Not acceptable.
+
+Since MathComp 2.x → Hierarchy Builder → coq-elpi, this transitively blocks the
+semantics, hence `formula_rep`, hence the leg-1 obligation. **Resolution path:**
+build leg 1 in a **dedicated, isolated switch** (or the **Coq Platform** bundle,
+which ships coq-elpi + MathComp 2.x prebuilt and coherent) — never in `framac-coq8`,
+which must stay pinned for the coqwp/frama-c work. Then resume at §4–§5. Everything
+*else* for leg 1 is grounded and ready.
 
 ## 4. The obligation, and a caveat
 - Statement: `separated_trans_Coq ⟺ formula_rep γ pd pf vt vv ⟦sep_trans⟧ Hty`
@@ -104,8 +122,53 @@ platform), then resume at §4–§5. Everything *else* for leg 1 is grounded and
 - [x] Fragment coverage: **PASS** (in-fragment); MathComp 2.x required (`HB.instance`).
 - [x] Toolchain: **coq-8.20 branch found** — semantics builds on Coq 8.20.1 (no
       Rocq-9 split). Coq + Equations + std++ + ext-lib install fine.
-- [ ] Full semantics built. **BLOCKED: coq-elpi `.cmxs` fails to build in this
-      environment (2.3.0/2.5.2/3.2.0, identical, env-not-version) → MathComp 2.x →
-      semantics blocked. Resolve on Coq Platform / a prebuilt-coq-elpi image (§3, §5).**
-- [ ] `⟦separated_trans⟧` `formula` term + bridge round-trip.
-- [ ] Obligation `Coq(L) ⟺ formula_rep …` proved, axiom-clean.
+- [x] **Semantics built — blocker RESOLVED via the Rocq-9.0 route** (2026-06-21).
+      Isolated switch `dualtp-leg1-r9` (rocq-elpi **3.4.0** / HB 1.10.2 / MathComp 2.5 /
+      Equations / std++ / ext-lib build cleanly — the `.cmxs` failure was purely the
+      transitional rocq-elpi 3.2.0-on-Coq-8.20). `proofs/core` 33/33 .vo incl.
+      `Types`(HB), `Syntax`, `Denotational`/`formula_rep`. Build steps: `leg1/BUILD.md`.
+      `framac-coq8` untouched. Used the `rocq-9.0` branch (Rocq 9 `Stdlib.*` namespace).
+- [x] **§3 STARTED — `leg1/SeparatedTrans.v` compiles (exit 0).** Confirms the Why3
+      denotational substrate is usable downstream; re-states the coqwp Memory defs in
+      Rocq 9; **PROVES `separated_trans_Coq`** (the Coq side of the obligation); scaffolds
+      `[[separated_trans]] : formula` against the real `Fquant`/`Fbinop`/`Fpred`/`Tfun`.
+      `formula_rep` signature pinned: `gamma -> valid_context -> pi_dom -> pi_dom_full ->
+      val_typevar -> pi_funpred -> val_vars -> forall f, formula_typed gamma f -> bool`.
+- [x] **§5 step 3 DONE — `[[separated_trans]]` `formula` term built** (`leg1/SeparatedTrans.v`,
+      `sep_trans_fmla : formula`, compiles exit 0). `addr` = `mk_ts "addr" nil`;
+      `included`/`separated` = monomorphic `predsym`s (args `[addr;int;addr;int]`, wf = `eq_refl`);
+      6× `Fquant Tforall` over `Fbinop Timplies` of `Fpred` applications. Type-checks as `formula`.
+- [ ] §5 step 4 — bridge round-trip: pretty-print `sep_trans_fmla` back through Why3, diff vs
+      `why3-separated_trans.mlw` (fail-closed).
+- [x] §5 step 5 (foundations) — machine-checked, axiom-free (`leg1/SeparatedTrans.v`):
+      `gamma` (abstract context), `gamma_valid : valid_context gamma` (decidable `check_context`),
+      `sep_trans_typed : formula_typed gamma sep_trans_fmla` (decidable typechecker).
+- [x] **§5 step 5 (the hard core) — the concrete model interpretation is BUILT and compiles**
+      (`leg1/Model.v`, 155 lines, **axiom-free**, Rocq 9.0). This was the multi-session-flagged
+      blocker; it is done:
+      - `my_pd : pi_dom` — `dom_aux`: addr's sort -> Coq `addr` (int/real fixed to `Z`/`R` by the
+        `domain` wrapper); `domain_ne` proved;
+      - `my_pdf : pi_dom_full gamma my_pd` — `adts` vacuous (no ADTs; `mut_in_ctx` false by vm_compute);
+      - `my_pf : pi_funpred gamma_valid my_pd my_pdf` — `constrs` vacuous; `funs` default-via-`domain_ne`;
+        **`preds` REAL**: dispatches `predsym_eq_dec` on `included_ps`/`separated_ps`, casts the
+        dependent `arg_list` (scast along the predsym eq + `sym_sigma_args _ srts = pred_srts` reduction
+        lemmas), extracts the 4 values (`get4`, dom-casts addr-sort/int-sort domains to `addr`/`Z`),
+        and applies `includedb`/`separatedb`;
+      - boolean predicates `includedb`/`separatedb` + `includedb_iff`/`separatedb_iff` (reflect to the
+        Coq `included`/`separated`).
+- [~] **§5 step 5 (the equivalence) — reduced to a concrete goal; finishing remains.**
+      Obligation `formula_rep ... sep_trans_fmla = true <-> sep_trans_prop` is stated in `Model.v`;
+      `unfold sep_trans_fmla, sep_trans_body; simpl_rep_full` reduces it to
+      `all_dec (forall d:addr … all_dec (forall d4:Z, implb (my_preds included_ps [] (pred_arg_list …
+      [Tvar p;…] (term_rep …))) (implb (my_preds separated_ps …) (my_preds separated_ps …))))`.
+      Stripping the 6 `all_dec` is **DONE** (`allb` lemma + `setoid_rewrite`, in `Model.v`): the goal
+      reduces to `(forall d..d4, implb (my_preds included_ps [] (pred_arg_list ..)) (implb ..)) <-> sep_trans_prop`.
+      `predsym_eq_dec included_ps included_ps` confirmed to reduce to `left e` (so `my_preds` enters the
+      `includedb` branch). **REMAINING — a genuine UIP/cast-cancellation proof (NOT mere bookkeeping):**
+      the framework's decidable equalities on `sort`/`typesym` (sig-types + records with *proof fields*)
+      do NOT reduce under conversion, so `domain my_dom_aux addr_sort` is only propositionally `= addr`
+      and `sym_sigma_args included_ps [] = pred_srts` holds via `sort_inj`, not `reflexivity`. The three
+      cast layers (`cast_set` from `get4` ⊕ `term_rep`'s `dom_cast` ⊕ `get_arg_list_hnth`'s `dom_cast`)
+      must be cancelled with `dom_cast_refl`/`dom_cast_eq` + `UIP_dec` (predsym/sort), then `term_rep
+      (Tvar x) = dom_cast (var_to_dom vv' x)` connects to the bound `d_i`, closing via
+      `includedb_iff`/`separatedb_iff` + `implb`. Laborious but axiom-free; no `Admitted` left in the file.

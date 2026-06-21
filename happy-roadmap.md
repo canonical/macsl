@@ -3,12 +3,23 @@
 **HAPPY** = **Hyperproperty Analysis for Program PolicY** — the `macsl` meta-property framework
 (the rename + rescope of MetAcsl's HILARE; see `../macsl.md`).
 
-**Status:** Roadmap — pre-normative. Each milestone graduates to Normative only when its directive
-surface lands in the `macsl` annotation reference, its lowering (the §T "how it becomes asserts +
-WP VCs" rules) is written, a prove/fail ptests pair ships under `tests/`, and the cross-reference +
-non-vacuity gates pass for the new directives. Until then, every syntax sketch here is a design
-proposal, not an accepted ACSL/`happy` production.
-**Version:** 0.1
+**Status:** Mixed — read each family's section marker (and the canonical coverage table in
+`tests/README.md`) as the source of truth, not this header. **All six STRIDE letters now have a
+shipped, prove/fail-tested property family** (H-T, H-I1, H-R, H-E, H-S, H-I2, and H-D totality —
+`tests/phase0…phase6`, run via `tests/run.sh`). What remains **pre-normative** (a design proposal, not
+yet an accepted `happy` production) is the *deferred sugar / extensions* called out per section:
+`\fuel` (H-D bounded-work), `\declassify` and stateful noninterference (H-I2), the `\audit` /
+`\privilege` sugar (H-R/H-E), and any milestone whose directive surface has not yet landed in the
+`macsl` annotation reference with its lowering + cross-reference + non-vacuity gates. A milestone
+graduates fully to Normative only when those gates pass for its directives.
+
+**Phase numbering (load-bearing — two schemes, do not conflate):** the **test-directory** number
+(`tests/phaseN/`) is the *implementation milestone order* — phase0 = H-T, phase1 = H-I1, phase2 = H-R,
+phase3 = H-E, phase4 = H-S, phase5 = H-I2, **phase6 = H-D**. The **"`macsl` phase (§7)"** column in the
+§0 table below is a *different* axis (mechanism-reuse grouping, 0…2+). H-D is implementation milestone
+**phase6** even though its §7 mechanism group is "1–2". When in doubt, the per-letter coverage table in
+`tests/README.md` is authoritative.
+**Version:** 0.2
 **Source of truth:** the Phase-0 `macsl` meta-pass specified in `../macsl.md` (the spec) and
 `macsl-impl.md` (the implementation): the `\writing`/`\reading`/`\calling` contexts, `\separated`
 isolation predicates, and the `\fguard`/`\tguard` guards, instrumented **in place** on the CIL AST and
@@ -163,7 +174,24 @@ that left no trace" becomes a VC Alt-Ergo refutes.
 
 ---
 
-## 4. H-D — Denial of service (totality + bounded work)
+## 4. H-D — Denial of service (totality + bounded work) — **IMPLEMENTED (Phase 6; totality + no-fault shipped, `\fuel` bounded-work TODO)**
+
+**Shipped realization.** `\context(\total)` is implemented and parsed (`src/macsl.ml`): it attaches a
+`terminates` clause WP discharges from the loop variant and bundles `-wp-rte`, making "this function
+returns on every input **and** faults on none" a checked claim. Tested as the dedicated phase fixture
+**`tests/phase6/`** (`run.sh` cases 33–34): `totality_pos.c` (an always-advancing parser) proves
+**9/9**, and the negative control `totality_neg.c` (a confused parser that advances only on odd `i`,
+so the variant cannot be shown to decrease) goes **8/9** with `…_loop_variant_decrease` red — the
+teeth. The worked example carries the same family end-to-end: `small_example/strtok_terminates.c`
+**17/17** and `small_example/compliant.c::find_first_overdrawn` **23/23** (`run.sh` cases 28–29).
+
+**Honest residuals (NOT done):** (i) the flagship `main.c::get_query_param` is **partial** — Frama-C's
+shipped libc `strtok` contract omits a strict-progress `ensures`, so its loop has no provable variant;
+`strtok_terminates.c` *proves* two sound added `ensures` fix it, but they must still be upstreamed into
+the libc contract. (ii) **`\fuel`** (explicit bounded-work step budget) remains **TODO** — only
+totality + no-fault ship, not the quantitative iteration bound. (iii) Scope GH2: H-D bounds
+modelled-loop iterations, not wall-clock / `malloc` / allocator behaviour. The server accept loop is
+intentionally infinite (`terminates \false;`) and correctly out of H-D scope (H-D bounds each request).
 
 Frama-C already owns every ingredient: `loop variant` (and a function `terminates` clause) makes
 termination a WP sub-goal; **`-wp-rte`** turns the C undefined-behavior set into per-operation

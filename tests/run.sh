@@ -138,6 +138,22 @@ check "ni/pos" 'Proved goals: +3 / 3' \
 check "ni/neg-catches" 'Proved goals: +2 / 3' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase5/noninterf_neg.c
 
+echo "== Phase-6 cases (H-D denial of service: totality + no-fault) =="
+# (Cases 33-34; numbered after the worked example to keep its cross-references 24-32
+#  intact. D is the dedicated phase fixture for the letter previously demonstrated
+#  only inside the worked example, cases 28-29.)
+
+# 33. H-D positive control: a parser whose loop always advances -> \total proves it
+#     terminates (and -wp-rte: never faults). "Never hangs, never crashes."
+check "hd/totality-pos" 'Proved goals: +9 / 9' \
+  frama-c "${BASE[@]}" "${WP[@]}" -wp-rte -macsl tests/phase6/totality_pos.c
+
+# 34. H-D negative control: the confused parser (advances only on odd i) -> the loop
+#     variant cannot be shown to strictly decrease -> the \total termination goal
+#     goes red. The teeth: "a malformed length field hangs the parser."
+check "hd/totality-neg-catches" 'Proved goals: +8 / 9' \
+  frama-c "${BASE[@]}" "${WP[@]}" -wp-rte -macsl tests/phase6/totality_neg.c
+
 echo "== Worked example (small_example: all seven HAPPY families together) =="
 
 # 24. Compliant banking core: seven policies across six families (H-R x2, H-S, H-T,

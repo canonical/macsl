@@ -1,0 +1,6 @@
+(include_subdirs qualified)
+(coq.theory
+ (name Leg1)
+ (flags :standard -w
+  "-ambiguous-paths -notation-overridden -hiding-delimiting-key -redundant-canonical-projection -deprecated-library-file -notation-incompatible-prefix -deprecated-since-mathcomp-2.5.0")
+ (theories Proofs Equations mathcomp HB elpi elpi_elpi stdpp Stdlib))

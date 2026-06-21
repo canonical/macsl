@@ -21,6 +21,11 @@ Require real.Square.
 
 Require Import Reals.
 
+(* macsl hardening: Pi_double_precision_bounds is now discharged with CoqInterval's *)
+(* verified interval arithmetic (replacing the upstream stub). This adds a          *)
+(* build-time dependency on coq-interval for this file.                             *)
+From Interval Require Import Tactic.
+
 (* Why3 comment *)
 (* cos is replaced with (Reals.Rtrigo_def.cos x) by the coq driver *)
 
@@ -77,14 +82,9 @@ Lemma Pi_double_precision_bounds :
   ((7074237752028440 / 2251799813685248)%R < Reals.Rtrigo1.PI)%R /\
   (Reals.Rtrigo1.PI < (7074237752028441 / 2251799813685248)%R)%R.
 Proof.
-replace PI with (4 * (PI / 4))%R by field.
-rewrite <- atan_1.
-admit. (* to avoid a dependency on CoqInterval *)
-(*
-Require Import Interval_tactic.
-split ; interval with (i_prec 55). 
-*)
-Admitted.
+(* macsl hardening: discharged via CoqInterval (was `admit.` to avoid the dep). *)
+split ; interval with (i_prec 70).
+Qed.
 
 (* Why3 goal *)
 Lemma Cos_pi : ((Reals.Rtrigo_def.cos Reals.Rtrigo1.PI) = (-1%R)%R).
