@@ -69,6 +69,40 @@ Remediation (each gap chosen for closure by a human):
   [`token_lifecycle.c`](tests/small_example/token_lifecycle.c), with a red replay control
   in [`attacks.c`](tests/small_example/attacks.c).
 
+## Real-world use case — Mbed TLS 4.1.0
+
+The same pipeline run end-to-end on a real codebase (reports in
+[`real-use-case/`](real-use-case)): a **code-blind EBIOS RM** study
+([`mbedtls-ebios-report.md`](real-use-case/mbedtls-ebios-report.md)) drives a `frama-c-launch`
+campaign — RTE/functional verdicts on the X.509/ASN.1 parser queue
+([`mbedtls-found-issues.md`](real-use-case/mbedtls-found-issues.md): no genuine defects; the
+undischarged goals are missing-precondition `mem_access` timeouts), and the EBIOS↔verification
+coverage join ([`mbedtls-ebios-gaps.md`](real-use-case/mbedtls-ebios-gaps.md)): 2 feared events
+RTE-covered, **5 BLOCKED residuals** (crypto/entropy/negotiation/side-channel — out of WP reach),
+and **4 Tier-3 logic risks discharged as HAPPY hyperproperties**, machine-checked green on a
+focused driver (the same compliant-core + red-control discipline as `small_example`):
+
+```
+┌───────────────────┬───────────────┬───────────────────────────────────┬───────────┬────────────────────────┐
+│      Policy       │    Family     │               EBIOS               │ Compliant │      Attack (red)      │
+├───────────────────┼───────────────┼───────────────────────────────────┼───────────┼────────────────────────┤
+│ verdict_integrity │ H-T (T)       │ FE2 trust-decision integrity      │ ✅        │ tamper_verdict         │
+├───────────────────┼───────────────┼───────────────────────────────────┼───────────┼────────────────────────┤
+│ accept_checked    │ H-S (S)       │ FE2 accept-after-checks           │ ✅        │ unchecked_accept       │
+├───────────────────┼───────────────┼───────────────────────────────────┼───────────┼────────────────────────┤
+│ hs_sequence       │ H-S (S)       │ FE1/FE6 state-machine sequencing  │ ✅        │ confused_state         │
+├───────────────────┼───────────────┼───────────────────────────────────┼───────────┼────────────────────────┤
+│ resumption_conf   │ H-I1 (I)      │ FE4 resumption-secret confinement │ ✅        │ leak_resumption        │
+├───────────────────┼───────────────┼───────────────────────────────────┼───────────┼────────────────────────┤
+│ seqno_monotonic   │ H-R/H-E (R/E) │ FE5 anti-replay                   │ ✅        │ accept_record rollback │
+└───────────────────┴───────────────┴───────────────────────────────────┴───────────┴────────────────────────┘
+```
+
+The compliant driver proves **41/41** (the 5 policies = 19 instrumented assertions, + RTE); the
+attack driver leaves exactly **5** goals unproved, one per policy (non-vacuity). EBIOS W5
+residual-risk sign-off is **pending** (the human risk owner). The verification overlay (drivers,
+config, baseline pin, scope map) lives at the use-frama-c root in `mbedtls-acsl/`.
+
 ## Trusted Computing Base (coqwp)
 
 A `-wp-prover coq` "Valid" is only as trustworthy as the Coq realization library (`coqwp`)
