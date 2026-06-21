@@ -22,20 +22,15 @@ jobs:
   coq:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "4.14"
-      # Coq MUST be installed before Why3: the Why3 opam package builds its Coq
-      # realizations (lib/why3/coq/BuiltIn.vo, ...) only when Coq is already present.
       - name: Install Coq 8.20.1
         run: opam install -y coq.8.20.1
-      - name: Install Why3 1.8.2 (with Coq realizations)
-        run: |
-          opam install -y why3.1.8.2
-          test -f "$(opam exec -- why3 --print-libdir)/coq/BuiltIn.vo" \
-            || { echo "::error::Why3 Coq realizations missing (BuiltIn.vo); Coq must precede Why3"; exit 1; }
+      - name: Install Why3 1.8.2
+        run: opam install -y why3.1.8.2
       # Trigonometry_hardened.v discharges Pi_double_precision_bounds with CoqInterval.
       # Re-assert coq.8.20.1 / why3.1.8.2 in the install so the extra packages
       # (coquelicot/flocq/mathcomp/bignums) cannot upgrade the pinned toolchain.
@@ -43,6 +38,32 @@ jobs:
         run: |
           opam repo add coq-released https://coq.inria.fr/opam/released || true
           opam install -y coq-interval coq.8.20.1 why3.1.8.2
+      # The opam `why3` package is built with `--disable-coq-libs`, so it ships NO
+      # compiled Coq realizations (only the `.v` sources live in the release tarball,
+      # not the switch). The *_hardened.v twins `Require Import BuiltIn` (and map/int/
+      # real/... realizations), so we build the realization library from the pinned
+      # why3 1.8.2 source and install the .vo tree into `$(why3 --print-libdir)/coq`,
+      # exactly where coqwp/check.sh's `-R "$(why3 --print-libdir)/coq" Why3` looks.
+      # floating_point/ieee_float are dropped (they need coq-flocq and no hardened
+      # twin uses them — matching the framac-coq8 realization set).
+      - name: Build Why3 Coq realizations from source (opam why3 is --disable-coq-libs)
+        run: |
+          opam exec -- bash -euo pipefail -c '
+            cd "$RUNNER_TEMP"
+            curl -sSfL -o why3.tar.gz https://why3.gitlabpages.inria.fr/releases/why3-1.8.2.tar.gz
+            echo "b7d112edd5bcce6bcce0023d2bc834eb2ae1a1c42d7aea44ffa124d649b50bea  why3.tar.gz" | sha256sum -c -
+            mkdir -p why3src && tar xzf why3.tar.gz -C why3src --strip-components=1
+            cd why3src/lib/coq
+            rm -rf floating_point ieee_float version.in _CoqProject
+            files="$(find . -name "*.v" | sort)"
+            coq_makefile -R . Why3 $files -o Makefile.coq
+            make -f Makefile.coq -j2
+            dest="$(why3 --print-libdir)/coq"
+            mkdir -p "$dest"
+            cp -r ./* "$dest"/
+            test -f "$dest/BuiltIn.vo" || { echo "::error::realization build produced no BuiltIn.vo"; exit 1; }
+            echo "installed $(find "$dest" -name "*.vo" | wc -l) realization .vo at $dest"
+          '
       - name: Versions
         run: opam exec -- sh -c 'coqc --version | head -1; why3 --version; opam list coq-interval 2>/dev/null | tail -1'
       - name: Run coqwp gate
@@ -51,7 +72,7 @@ jobs:
   lean:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install elan + Lean 4.31.0
         run: |
           curl -sSfL https://elan.lean-lang.org/elan-init.sh \
@@ -59,8 +80,26 @@ jobs:
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Versions
         run: lean --version
-      - name: Run leanwp gate (fail-closed)
+      - name: Run leanwp gate (standalone twins — Memory, Vset; no mathlib)
         run: bash axiom-wp/leanwp/check.sh
+
+  # The mathlib-dependent Lean twins (Memory's addr<->Z bijection + the reals/floats:
+  # Cfloat 32, ArcTrigo 2, ExpLog 1) live in the `leanwp/realfloat/` lake project on
+  # mathlib v4.31.0. Separate job so the fast standalone `lean` gate above is not slowed
+  # by the mathlib olean cache download (~GB via `lake exe cache get`).
+  lean-mathlib:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install elan + Lean 4.31.0
+        run: |
+          curl -sSfL https://elan.lean-lang.org/elan-init.sh \
+            | sh -s -- -y --default-toolchain leanprover/lean4:v4.31.0
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Versions
+        run: lean --version
+      - name: Run realfloat gate (fail-closed; fetches mathlib oleans)
+        run: bash axiom-wp/leanwp/realfloat/check.sh
 
   # Leg 1 (dual-TP semantic Why3<->Coq anchoring) builds on Rocq 9.0 -- a SEPARATE
   # toolchain from the coqwp gate above (Coq 8.20.1): the joscoh/why3-semantics
@@ -73,16 +112,20 @@ jobs:
   leg1:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "4.14"
-      - name: Install Rocq 9.0 toolchain (coq-elpi / MathComp 2.5 / Equations / std++ / ext-lib)
+      # Pin the Rocq-9 toolchain to the known-good set the leg-1 sources + the vendored
+      # why3-semantics actually build against (unpinned resolution drifts and breaks the
+      # MathComp/HB/elpi build). HB 1.10.2 is pulled transitively by mathcomp 2.5.0.
+      - name: "Install Rocq 9.0 toolchain (pinned: coq-elpi 3.4.0 / MathComp 2.5.0 / Equations 1.3.1+9.0 / std++ 1.12.0 / ext-lib 0.13.1)"
         run: |
           opam repo add rocq-released https://rocq-prover.org/opam/released || true
           opam repo add coq-released  https://coq.inria.fr/opam/released   || true
-          opam install -y dune coq.9.0.1 coq-elpi coq-mathcomp-ssreflect coq-equations coq-stdpp coq-ext-lib
+          opam install -y dune coq.9.0.1 coq-elpi.3.4.0 coq-mathcomp-ssreflect.2.5.0 \
+            coq-equations.1.3.1+9.0 coq-stdpp.1.12.0 coq-ext-lib.0.13.1
       - name: Axiom-free guard (no Admitted/admit/Axiom/Abort in leg-1 sources)
         run: |
           if grep -nE 'Admitted|\badmit\b|^Axiom|Abort' axiom-wp/leg1/SeparatedTrans.v axiom-wp/leg1/Model.v; then
@@ -91,7 +134,9 @@ jobs:
       - name: Vendor joscoh/why3-semantics (rocq-9.0 branch, pinned)
         run: |
           git clone --quiet https://github.com/joscoh/why3-semantics.git "$RUNNER_TEMP/why3sem"
-          git -C "$RUNNER_TEMP/why3sem" checkout --quiet a69026c
+          # d75ba4c = "Upgrade to Rocq 9.0" (rocq-9.0 branch HEAD). The earlier pin
+          # a69026c is the commit BEFORE that upgrade -> will not build on Rocq 9.0.1.
+          git -C "$RUNNER_TEMP/why3sem" checkout --quiet d75ba4c
           mkdir -p "$RUNNER_TEMP/why3sem/leg1"
           cp axiom-wp/leg1/SeparatedTrans.v axiom-wp/leg1/Model.v "$RUNNER_TEMP/why3sem/leg1/"
           cp axiom-wp/leg1/dune.leg1-theory "$RUNNER_TEMP/why3sem/leg1/dune"
