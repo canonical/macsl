@@ -86,6 +86,17 @@ Proof.
   repeat (f_equal; try (apply sort_inj; reflexivity)).
 Qed.
 
+(* gt : int -> int -> Prop, interpreted as Z `>` (a > b := b < a). *)
+Definition gt_srts : list sort := [s_int; s_int].
+Definition gtb (a b : Z) : bool := b <? a.
+Definition get2 (args : arg_list (domain my_dom_aux) gt_srts) : Z * Z :=
+  (dom_to_Z (hlist_hd args), dom_to_Z (hlist_hd (hlist_tl args))).
+Lemma sym_args_gt (srts:list sort) : sym_sigma_args gt_ps srts = gt_srts.
+Proof.
+  unfold sym_sigma_args, ty_subst_list_s, gt_srts. cbn.
+  repeat (f_equal; try (apply sort_inj; reflexivity)).
+Qed.
+
 Definition my_preds (p:predsym) (srts:list sort)
   (args: arg_list (domain my_dom_aux) (sym_sigma_args p srts)) : bool :=
   match predsym_eq_dec p included_ps with
@@ -103,7 +114,16 @@ Definition my_preds (p:predsym) (srts:list sort)
           let args2 : arg_list (domain my_dom_aux) pred_srts :=
             scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep srts)) args' in
           let '(a0, a1, a2, a3) := get4 args2 in separatedb a0 a1 a2 a3
-      | right _ => false
+      | right _ =>
+          match predsym_eq_dec p gt_ps with
+          | left Heq =>
+              let args' : arg_list (domain my_dom_aux) (sym_sigma_args gt_ps srts) :=
+                scast (f_equal (fun pp : predsym => arg_list (domain my_dom_aux) (sym_sigma_args pp srts)) Heq) args in
+              let args2 : arg_list (domain my_dom_aux) gt_srts :=
+                scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_gt srts)) args' in
+              let '(a0, a1) := get2 args2 in gtb a0 a1
+          | right _ => false
+          end
       end
   end.
 
@@ -129,6 +149,9 @@ Proof.
   destruct (Z.eqb_spec (base p) (base q)); split; intros H;
     repeat (destruct H as [H|H]); try tauto; try lia.
 Qed.
+
+Lemma gtb_iff a b : a > b <-> gtb a b = true.
+Proof. unfold gtb. rewrite Z.ltb_lt. lia. Qed.
 
 (* ===================================================================== *)
 (*  The obligation -- components built; statement reduced to a concrete    *)
@@ -238,8 +261,8 @@ Qed.
 Lemma posval (P:predsym) (Hsp : s_params P = []) (vv: val_vars my_pd my_vt) (ts: list term)
   (Hval : formula_typed gamma (Fpred P [] ts)) (i:nat) (x:vsymbol)
   (Hi : (i < Datatypes.length (s_args P))%nat) (Hnth : nth i ts tm_d = Tvar x)
-  (HP : sym_sigma_args P [] = pred_srts) :
-  exists (E : v_subst my_vt (snd x) = nth i pred_srts s_int),
+  {L : list sort} (HP : sym_sigma_args P [] = L) :
+  exists (E : v_subst my_vt (snd x) = nth i L s_int),
     hnth i (cast_arg_list HP (pred_arg_list my_pd my_vt P [] ts
               (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)) s_int (dom_int my_pd)
     = dom_cast (dom_aux my_pd) E (vv x).
@@ -527,4 +550,187 @@ Proof.
     apply (H (D2A d) (D2A d0) (D2A d1) (D2Z d2) (D2Z d3) (D2Z d4)).
     + rewrite <- includedb_iff in E1. exact E1.
     + rewrite <- includedb_iff in E2. exact E2.
+Qed.
+
+(* ===================================================================== *)
+(*  Leg 1 for Memory.separated_included (adds: gt predicate + int const).  *)
+(* ===================================================================== *)
+
+(* denotation of an integer literal: term_rep (Tconst (ConstInt z)) = z (cast). *)
+Lemma term_rep_const (vv: val_vars my_pd my_vt) (t:term) (z:Z) (ty:vty)
+  (Ht : term_has_type gamma t ty) (Hx : t = Tconst (ConstInt z)) :
+  exists (E : v_subst my_vt vty_int = v_subst my_vt ty),
+    term_rep gamma_valid my_pd my_pdf my_vt my_pf vv t ty Ht = dom_cast (dom_aux my_pd) E z.
+Proof. subst t. eexists. rewrite term_rep_equation_1. cbv zeta. unfold cast_dom_vty. reflexivity. Qed.
+
+Lemma argval_const (P:predsym) (Hsp : s_params P = []) (vv: val_vars my_pd my_vt) (ts: list term)
+  (Hval : formula_typed gamma (Fpred P [] ts)) (i:nat) (z:Z)
+  (Hi : (i < Datatypes.length (s_args P))%nat) (Hnth : nth i ts tm_d = Tconst (ConstInt z)) :
+  exists (E : v_subst my_vt vty_int = nth i (sym_sigma_args P []) s_int),
+    hnth i (pred_arg_list my_pd my_vt P [] ts
+              (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval) s_int (dom_int my_pd)
+    = dom_cast (dom_aux my_pd) E z.
+Proof.
+  unfold pred_arg_list.
+  pose (Heq := arg_list_hnth_eq P (eq_sym (f_equal (map vty_var) Hsp)) Hi my_vt).
+  pose (Hty := arg_list_hnth_ty (proj1' (pred_val_inv Hval))
+                                (proj2' (proj2' (pred_val_inv Hval))) Hi).
+  destruct (term_rep_const vv (nth i ts tm_d) z _ Hty Hnth) as [E' HE'].
+  exists (eq_trans E' Heq). etransitivity.
+  { apply (get_arg_list_hnth my_pd my_vt P [] ts
+      (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv)
+      (@term_rep_irrel gamma gamma_valid my_pd my_pdf my_pf my_vt vv)
+      (s_params_Nodup P) (proj1' (pred_val_inv Hval))
+      (proj1' (proj2' (pred_val_inv Hval))) (proj2' (proj2' (pred_val_inv Hval)))
+      i Hi Heq Hty). }
+  rewrite HE'. rewrite dom_cast_compose. reflexivity.
+Qed.
+
+Lemma posval_const (P:predsym) (Hsp : s_params P = []) (vv: val_vars my_pd my_vt) (ts: list term)
+  (Hval : formula_typed gamma (Fpred P [] ts)) (i:nat) (z:Z)
+  (Hi : (i < Datatypes.length (s_args P))%nat) (Hnth : nth i ts tm_d = Tconst (ConstInt z))
+  {L : list sort} (HP : sym_sigma_args P [] = L) :
+  exists (E : v_subst my_vt vty_int = nth i L s_int),
+    hnth i (cast_arg_list HP (pred_arg_list my_pd my_vt P [] ts
+              (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)) s_int (dom_int my_pd)
+    = dom_cast (dom_aux my_pd) E z.
+Proof.
+  destruct (argval_const P Hsp vv ts Hval i z Hi Hnth) as [E0 HE0].
+  exists (eq_trans E0 (cast_nth_eq HP i s_int)).
+  rewrite hnth_cast_arg_list.
+  transitivity (scast (f_equal (domain (dom_aux my_pd)) (cast_nth_eq HP i s_int))
+                  (dom_cast (dom_aux my_pd) E0 z)).
+  { f_equal. exact HE0. }
+  unfold dom_cast. rewrite scast_scast. apply scast_eq_uip.
+Qed.
+
+(* D2Z is the identity on Z (domain my_dom_aux (v_subst my_vt vty_int) = Z definitionally). *)
+Lemma D2Z_id (z:Z) : D2Z z = z.
+Proof.
+  unfold D2Z, dom_cast. generalize (f_equal (domain my_dom_aux) Hvi); intro H.
+  assert (H = eq_refl) as -> by apply Cast.UIP. reflexivity.
+Qed.
+
+(* my_preds on gt applied to [Tvar x; Tconst z] = gtb (D2Z (vv x)) z, for the two
+   concrete int variables used by separated_included (snd _ = vty_int definitionally). *)
+Lemma my_preds_gt_lp (vv: val_vars my_pd my_vt) (z:Z)
+  (Hval : formula_typed gamma (Fpred gt_ps [] [Tvar lp_vs; Tconst (ConstInt z)])) :
+  my_preds gt_ps [] (pred_arg_list my_pd my_vt gt_ps []
+     [Tvar lp_vs; Tconst (ConstInt z)]
+     (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)
+  = gtb (D2Z (vv lp_vs)) z.
+Proof.
+  unfold my_preds.
+  destruct (predsym_eq_dec gt_ps included_ps) as [Hb|_]; [exfalso; inversion Hb|].
+  destruct (predsym_eq_dec gt_ps separated_ps) as [Hb|_]; [exfalso; inversion Hb|].
+  destruct (predsym_eq_dec gt_ps gt_ps) as [Heqp|Hne]; [|exfalso; now apply Hne].
+  rewrite (UIP_dec predsym_eq_dec Heqp eq_refl). simpl.
+  set (ARGS := pred_arg_list my_pd my_vt gt_ps [] [Tvar lp_vs; Tconst (ConstInt z)]
+        (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval).
+  unfold get2.
+  destruct (posval gt_ps eq_refl vv [Tvar lp_vs; Tconst (ConstInt z)] Hval 0 lp_vs ltac:(cbn;lia) eq_refl (sym_args_gt [])) as [E0 H0].
+  destruct (posval_const gt_ps eq_refl vv [Tvar lp_vs; Tconst (ConstInt z)] Hval 1 z ltac:(cbn;lia) eq_refl (sym_args_gt [])) as [E1 H1].
+  fold ARGS in H0, H1.
+  change (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_gt [])) ARGS))
+    with (hnth 0 (cast_arg_list (sym_args_gt []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_gt [])) ARGS)))
+    with (hnth 1 (cast_arg_list (sym_args_gt []) ARGS) s_int (dom_int my_pd)).
+  rewrite H0, H1. unfold dom_to_Z.
+  f_equal.
+  - apply collapseZ.
+  - transitivity (D2Z z); [ apply collapseZ | apply D2Z_id ].
+Qed.
+
+Lemma my_preds_gt_lq (vv: val_vars my_pd my_vt) (z:Z)
+  (Hval : formula_typed gamma (Fpred gt_ps [] [Tvar lq_vs; Tconst (ConstInt z)])) :
+  my_preds gt_ps [] (pred_arg_list my_pd my_vt gt_ps []
+     [Tvar lq_vs; Tconst (ConstInt z)]
+     (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)
+  = gtb (D2Z (vv lq_vs)) z.
+Proof.
+  unfold my_preds.
+  destruct (predsym_eq_dec gt_ps included_ps) as [Hb|_]; [exfalso; inversion Hb|].
+  destruct (predsym_eq_dec gt_ps separated_ps) as [Hb|_]; [exfalso; inversion Hb|].
+  destruct (predsym_eq_dec gt_ps gt_ps) as [Heqp|Hne]; [|exfalso; now apply Hne].
+  rewrite (UIP_dec predsym_eq_dec Heqp eq_refl). simpl.
+  set (ARGS := pred_arg_list my_pd my_vt gt_ps [] [Tvar lq_vs; Tconst (ConstInt z)]
+        (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval).
+  unfold get2.
+  destruct (posval gt_ps eq_refl vv [Tvar lq_vs; Tconst (ConstInt z)] Hval 0 lq_vs ltac:(cbn;lia) eq_refl (sym_args_gt [])) as [E0 H0].
+  destruct (posval_const gt_ps eq_refl vv [Tvar lq_vs; Tconst (ConstInt z)] Hval 1 z ltac:(cbn;lia) eq_refl (sym_args_gt [])) as [E1 H1].
+  fold ARGS in H0, H1.
+  change (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_gt [])) ARGS))
+    with (hnth 0 (cast_arg_list (sym_args_gt []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_gt [])) ARGS)))
+    with (hnth 1 (cast_arg_list (sym_args_gt []) ARGS) s_int (dom_int my_pd)).
+  rewrite H0, H1. unfold dom_to_Z.
+  f_equal.
+  - apply collapseZ.
+  - transitivity (D2Z z); [ apply collapseZ | apply D2Z_id ].
+Qed.
+
+(* separated on the [p,lp,q,lq] list (companion to my_preds_sep_qr / _pr). *)
+Lemma my_preds_sep_pq (vv: val_vars my_pd my_vt)
+  (Hval : formula_typed gamma (Fpred separated_ps [] [Tvar p_vs; Tvar lp_vs; Tvar q_vs; Tvar lq_vs])) :
+  my_preds separated_ps [] (pred_arg_list my_pd my_vt separated_ps []
+     [Tvar p_vs; Tvar lp_vs; Tvar q_vs; Tvar lq_vs]
+     (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval)
+  = separatedb (D2A (vv p_vs)) (D2Z (vv lp_vs)) (D2A (vv q_vs)) (D2Z (vv lq_vs)).
+Proof.
+  unfold my_preds.
+  destruct (predsym_eq_dec separated_ps included_ps) as [Hbad|_]; [exfalso; inversion Hbad|].
+  destruct (predsym_eq_dec separated_ps separated_ps) as [Heqp|Hne]; [|exfalso; now apply Hne].
+  rewrite (UIP_dec predsym_eq_dec Heqp eq_refl). simpl.
+  set (ARGS := pred_arg_list my_pd my_vt separated_ps []
+        [Tvar p_vs; Tvar lp_vs; Tvar q_vs; Tvar lq_vs]
+        (term_rep gamma_valid my_pd my_pdf my_vt my_pf vv) Hval).
+  unfold get4.
+  destruct (posval separated_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] Hval 0 p_vs  ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E0 H0].
+  destruct (posval separated_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] Hval 1 lp_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E1 H1].
+  destruct (posval separated_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] Hval 2 q_vs  ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E2 H2].
+  destruct (posval separated_ps eq_refl vv [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] Hval 3 lq_vs ltac:(cbn;lia) eq_refl (sym_args_sep [])) as [E3 H3].
+  fold ARGS in H0, H1, H2, H3.
+  change (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS))
+    with (hnth 0 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS)))
+    with (hnth 1 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS))))
+    with (hnth 2 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  change (hlist_hd (hlist_tl (hlist_tl (hlist_tl (scast (f_equal (arg_list (domain my_dom_aux)) (sym_args_sep [])) ARGS)))))
+    with (hnth 3 (cast_arg_list (sym_args_sep []) ARGS) s_int (dom_int my_pd)).
+  rewrite H0, H1, H2, H3. unfold dom_to_addr, dom_to_Z.
+  f_equal; [ apply collapseA | apply collapseZ | apply collapseA | apply collapseZ ].
+Qed.
+
+Definition sep_incl_prop : Prop :=
+  forall (p q:addr) (lp lq:Z),
+    lp > 0 -> lq > 0 -> separated p lp q lq -> included p lp q lq -> False.
+
+Theorem sep_incl_faithful :
+  @formula_rep gamma gamma_valid my_pd my_pdf my_vt my_pf my_vv
+    sep_incl_fmla sep_incl_typed = true
+  <-> sep_incl_prop.
+Proof.
+  unfold sep_incl_fmla, sep_incl_body, app_gt, app_sep, app_inc. simpl_rep_full.
+  rewrite allb; repeat setoid_rewrite allb.
+  unfold sep_incl_prop. split.
+  - intros H p q lp lq Hlp Hlq Hsep Hinc.
+    specialize (H (A2D p) (A2D q) (Z2D lp) (Z2D lq)).
+    rewrite my_preds_gt_lp, my_preds_gt_lq, my_preds_sep_pq, my_preds_inc in H.
+    slookin H. rewrite !D2A_inv, !D2Z_inv in H. unfold is_true in H.
+    rewrite gtb_iff in Hlp. rewrite gtb_iff in Hlq.
+    rewrite separatedb_iff in Hsep. rewrite includedb_iff in Hinc.
+    rewrite Hlp in H. simpl in H. rewrite Hlq in H. simpl in H.
+    rewrite Hsep in H. simpl in H. rewrite Hinc in H. simpl in H. discriminate H.
+  - intros H d d0 d1 d2.
+    rewrite my_preds_gt_lp, my_preds_gt_lq, my_preds_sep_pq, my_preds_inc. slook. unfold is_true.
+    destruct (gtb (D2Z d1) 0) eqn:G1; simpl; [|reflexivity].
+    destruct (gtb (D2Z d2) 0) eqn:G2; simpl; [|reflexivity].
+    destruct (separatedb (D2A d) (D2Z d1) (D2A d0) (D2Z d2)) eqn:S; simpl; [|reflexivity].
+    destruct (includedb (D2A d) (D2Z d1) (D2A d0) (D2Z d2)) eqn:I; simpl; [|reflexivity].
+    exfalso. apply (H (D2A d) (D2A d0) (D2Z d1) (D2Z d2)).
+    + apply gtb_iff. exact G1.
+    + apply gtb_iff. exact G2.
+    + apply separatedb_iff. exact S.
+    + apply includedb_iff. exact I.
 Qed.

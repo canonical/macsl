@@ -32,6 +32,22 @@
         "crosscheck_leg1_why3_coq": "verified: leg1/Model.v::included_trans_faithful (formula_rep ... = true <-> included_trans_prop), axiom-clean",
         "certified": "dual-TP CERTIFIED (both legs)"
       }
+    },
+    {
+      "qualname": "Memory.separated_included",
+      "trust_class": "coqwp-realization",
+      "statement_informal": "0 < a -> 0 < b -> separated p a q b -> ~ included p a q b",
+      "why3": { "source": "coqwp-goal", "locator": "coqwp/Memory.v : (* Why3 goal *) Lemma separated_included" },
+      "coq":  "coqwp/Memory_hardened.v",
+      "lean": "leanwp/Memory.lean",
+      "acsl_site": null,
+      "status": {
+        "coq":  "verified: Closed under the global context (coqwp/check.sh)",
+        "lean": "verified: Lean 4.31.0, axioms [propext, Classical.choice, Quot.sound] (leanwp/check.sh)",
+        "crosscheck_leg2_coq_lean": "verified: canon(Coq)==canon(Lean) (dualtp/crosscheck.py)",
+        "crosscheck_leg1_why3_coq": "verified: leg1/Model.v::sep_incl_faithful (formula_rep ... = true <-> sep_incl_prop), axiom-clean; model extended with interpreted int `>` + constants",
+        "certified": "dual-TP CERTIFIED (both legs)"
+      }
     }
   ]
 }

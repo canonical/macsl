@@ -76,6 +76,12 @@ Definition included_ps : predsym :=
 Definition separated_ps : predsym :=
   Build_predsym (Build_fpsym "separated" nil pred_args eq_refl eq_refl).
 
+(* Integer comparison `>` (Why3 int.Int.(>)), needed by separated_included:
+   monomorphic predicate int -> int -> Prop, interpreted as Z `>` by my_pf. *)
+Definition gt_args : list vty := [vty_int; vty_int].
+Definition gt_ps : predsym :=
+  Build_predsym (Build_fpsym "gt" nil gt_args eq_refl eq_refl).
+
 (* The six bound variables (vsymbol = string * vty). *)
 Definition p_vs  : vsymbol := ("p",  addr_ty).
 Definition q_vs  : vsymbol := ("q",  addr_ty).
@@ -120,7 +126,7 @@ From Proofs Require Import core.Typechecker.
    interpreted symbols of the obligation; their Coq meaning is supplied by
    the interpretation pi_funpred, below.) *)
 Definition gamma : context :=
-  [abs_pred separated_ps; abs_pred included_ps; abs_type addr_ts].
+  [abs_pred gt_ps; abs_pred separated_ps; abs_pred included_ps; abs_type addr_ts].
 
 (* (ii) valid_context, discharged by the framework's decidable checker
    (no axioms -- pure computation via check_context_correct). *)
@@ -131,5 +137,26 @@ Proof. apply (elimT (check_context_correct gamma)). vm_compute; reflexivity. Qed
 Lemma sep_trans_typed : formula_typed gamma sep_trans_fmla.
 Proof.
   apply (elimT (typecheck_formula_correct gamma sep_trans_fmla)).
+  vm_compute; reflexivity.
+Qed.
+
+(* ---- Why3(separated_included): lp>0 -> lq>0 -> separated p lp q lq ->
+   included p lp q lq -> false  (memaddr.mlw lemma separated_included). ---- *)
+Definition app_gt (x : vsymbol) (z : Z) : formula :=
+  Fpred gt_ps nil [Tvar x; Tconst (ConstInt z)].
+
+Definition sep_incl_body : formula :=
+  Fbinop Timplies (app_gt lp_vs 0%Z)
+    (Fbinop Timplies (app_gt lq_vs 0%Z)
+      (Fbinop Timplies (app_sep p_vs lp_vs q_vs lq_vs)
+        (Fbinop Timplies (app_inc p_vs lp_vs q_vs lq_vs) Ffalse))).
+
+Definition sep_incl_fmla : formula :=
+  Fquant Tforall p_vs (Fquant Tforall q_vs
+  (Fquant Tforall lp_vs (Fquant Tforall lq_vs sep_incl_body))).
+
+Lemma sep_incl_typed : formula_typed gamma sep_incl_fmla.
+Proof.
+  apply (elimT (typecheck_formula_correct gamma sep_incl_fmla)).
   vm_compute; reflexivity.
 Qed.
