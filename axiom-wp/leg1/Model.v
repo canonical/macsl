@@ -180,9 +180,41 @@ Qed.
               (implb (my_preds separated_ps [] (pred_arg_list ... [Tvar q_vs;...]))
                      (my_preds separated_ps [] (pred_arg_list ... [Tvar p_vs;...]))))
      <-> sep_trans_prop.
-   REMAINING (one cast-cancellation lemma, mechanical, no axioms): prove
-     my_preds included_ps [] (pred_arg_list .. [Tvar a;Tvar b;Tvar c;Tvar e] (term_rep .. vv'))
-       = includedb (vv' a) (vv' b) (vv' c) (vv' e)   (modulo cast_set/dom_cast,
-   merged via dom_cast_compose + dom_cast_refl; term_rep(Tvar x) = dom_cast (var_to_dom vv' x)
-   and get_arg_list_hnth give hnth i = dom_cast (term_rep ..)); ditto separated;
-   then close with includedb_iff / separatedb_iff and implb semantics. *)
+   REMAINING (one cast-cancellation lemma, mechanical): prove the helper
+     my_preds included_ps [] (pred_arg_list my_pd my_vt included_ps []
+        [Tvar p_vs;Tvar lp_vs;Tvar q_vs;Tvar lq_vs] (term_rep .. vv) Hval)
+       = includedb (D2A (vv p_vs)) (D2Z (vv lp_vs)) (D2A (vv q_vs)) (D2Z (vv lq_vs))
+   (and the separated analogue), where the projections from a domain value to the
+   concrete carrier are
+     Definition Hva : v_subst my_vt addr_ty = addr_sort := ltac:(apply sort_inj; reflexivity).
+     Definition Hvi : v_subst my_vt vty_int = s_int     := ltac:(apply sort_inj; reflexivity).
+     Definition D2A d := cast_set dom_addr_eq (dom_cast my_dom_aux Hva d).
+     Definition D2Z d := dom_cast my_dom_aux Hvi d.
+
+   PRECISE PINNED STATE (verified this session): after
+     unfold my_preds; destruct (predsym_eq_dec included_ps included_ps) as [Heq|H];
+     [|contradiction]; replace Heq with eq_refl (UIP_dec predsym_eq_dec); simpl
+   the helper goal is exactly
+     includedb (dom_to_addr (hlist_hd (scast (f_equal (arg_list (domain my_dom_aux))
+        (sym_args_inc [])) ARGS))) (dom_to_Z (hlist_hd (hlist_tl ..))) ... = includedb (D2A ..) ..
+   with ARGS := pred_arg_list .. (term_rep .. vv) Hval. Closing toolkit, all PRESENT in
+   the why3-semantics core (no new lemmas needed):
+     - cast_arg_list = the scast above (Domain.v); push it through the projections with
+       hlist_hd_cast / hlist_tl_cast (Domain.v);
+     - hlist_hd (hlist_tl^k ARGS) = hnth k ARGS, then get_arg_list_hnth (Denotational.v)
+       gives hnth k = dom_cast _ (term_rep .. (nth k ts) ..) with term_rep_irrel for the
+       typing-proof side-condition;
+     - term_rep_equation_3 : term_rep .. (Tvar x) ty Hty = dom_cast _ (f_equal (val vt)
+       (eq_sym (ty_var_inv Hty))) (var_to_dom .. vv x), and var_to_dom .. vv x = vv x;
+     - collapse the resulting tower (cast_set ∘ scast ∘ dom_cast ∘ dom_cast) of (vv x):
+       every layer is an eq_rect over a Set equality between the SAME endpoints, so
+       scast_scast + scast_eq_uip / dom_cast_compose + dom_cast_eq + UIP_dec collapse it
+       to D2A/D2Z (vv x);
+     - finish with includedb_iff / separatedb_iff + implb semantics, and reindex the
+       outer `forall d:domain` as `forall p:addr` via the D2A/D2Z bijections.
+
+   AXIOM BASE (finding): the why3-semantics framework's Cast.UIP is derived from Stdlib's
+   Eqdep.Eq_rect_eq.eq_rect_eq (Streicher's K), so `formula_rep` itself rests on eq_rect_eq.
+   Hence the closed obligation is "axiom-free in the leg-1 sources" but Print Assumptions
+   will legitimately list the framework's eq_rect_eq (UIP/K) — the allowed A_coq base for
+   leg 1, not a new axiom. No Admitted is left in this file. *)

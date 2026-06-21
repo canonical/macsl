@@ -1,7 +1,7 @@
 # Dual-TP status (Coq + Lean cross-validation)
 
 Tracks the dual-prover certification of `axiom-wp`'s trust-bearing lemmas, per
-`../frama-c-dual-tp-spec.md`. A lemma is **dual-TP CERTIFIED** only when *all three*
+`../docs/frama-c-dual-tp-spec.md`. A lemma is **dual-TP CERTIFIED** only when *all three*
 hold: Coq verified, Lean verified, and the **3-way structural cross-check**
 (`Why3 ≡ Coq ≡ Lean`) passes. Each side is gated by its own `check.sh`
 (`coqwp/check.sh`, `leanwp/check.sh`) — **fail-closed**: a missing prover is a
@@ -19,32 +19,48 @@ axiom-wp/
 
 ## Status
 
+A lemma's `crosscheck` cell tracks the hybrid 3-way check: **leg 2** = syntactic
+Coq↔Lean (`dualtp/`, built and CI-gated); **leg 1** = semantic Why3↔Coq (`leg1/`, the
+pilot is reduced to one cast lemma). Full certification needs both legs.
+
 | Family | Coq | Lean | 3-way crosscheck | Certified? |
 |---|---|---|---|---|
-| `Memory` (11 lemmas: separation/inclusion/eqmem/havoc/table + 3 addr↔Z bijection) | ✅ `Memory_hardened.v` | ✅ 8 `leanwp/Memory.lean` + 3 bijection `leanwp/realfloat/RealFloat.lean` (11/11) | ⛔ tooling not built | **partial** |
-| `Vset` (11 lemmas) | ✅ `Vset_hardened.v` | ✅ `leanwp/Vset.lean` (11/11) | ⛔ tooling not built | **partial** |
-| `Cfloat` (32 lemmas) | ✅ `Cfloat_hardened.v` | ✅ `leanwp/realfloat/Cfloat.lean` (32/32) | ⛔ tooling not built | **partial** |
-| `ArcTrigo` (2) / `ExpLog` (1) | ✅ `*_hardened.v` | ✅ `leanwp/realfloat/RealFloat.lean` (3/3) | ⛔ tooling not built | **partial** |
-| `Trigonometry` (1: `Pi_double_precision_bounds`) | ✅ `Trigonometry_hardened.v` (CoqInterval) | ⛔ **deferred** — mathlib has no tight-enough π bound | ⛔ tooling not built | pending |
+| `Memory` (11 lemmas: separation/inclusion/eqmem/havoc/table + 3 addr↔Z bijection) | `Memory_hardened.v` | 8 `leanwp/Memory.lean` + 3 bijection `leanwp/realfloat/RealFloat.lean` (11/11) | leg 2 ✓ for `separated_trans`/`included_trans`/`separated_included` (`dualtp/`); leg 1 pilot reduced | **partial** |
+| `Vset` (11 lemmas) | `Vset_hardened.v` | `leanwp/Vset.lean` (11/11) | leg 2: out of FOL fragment (`dualtp` `OUT_OF_FRAGMENT`) | **partial** |
+| `Cfloat` (32 lemmas) | `Cfloat_hardened.v` | `leanwp/realfloat/Cfloat.lean` (32/32) | leg 2: out of FOL fragment | **partial** |
+| `ArcTrigo` (2) / `ExpLog` (1) | `*_hardened.v` | `leanwp/realfloat/RealFloat.lean` (3/3) | leg 2: out of FOL fragment | **partial** |
+| `Trigonometry` (1: `Pi_double_precision_bounds`) | `Trigonometry_hardened.v` (CoqInterval) | `leanwp/realfloat/RealFloat.lean` (1/1, via `pi_gt_d20`/`pi_lt_d20`) | **leg 2 ✓** (`dualtp/`) | **partial** |
 
-**Lean twins (status) — 57 of 58 done.** Every trust-bearing coqwp lemma now has a verified Lean twin
-**except `Pi_double_precision_bounds`**. Two gates, both fail-closed (Lean 4.31.0; no `sorry`; axioms ⊆
-{propext, Classical.choice, Quot.sound}):
+**Lean twins (status) — 58 of 58 done.** Every trust-bearing coqwp lemma now has a verified Lean twin.
+Two gates, both fail-closed (Lean 4.31.0; no `sorry`; axioms ⊆ {propext, Classical.choice, Quot.sound}):
 - `leanwp/check.sh` — the **standalone** core (no mathlib): `Memory.lean` (8) + `Vset.lean` (11).
 - `leanwp/realfloat/check.sh` — the **mathlib** twins (lake project on mathlib `v4.31.0`):
-  `RealFloat.lean` (3 `Memory` addr↔Z bijection + 2 `ArcTrigo` + 1 `ExpLog`) + `Cfloat.lean` (32).
+  `RealFloat.lean` (3 `Memory` addr↔Z bijection + 2 `ArcTrigo` + 1 `ExpLog` + 1 π bound) + `Cfloat.lean`
+  (32).
 
 Statements are authored structurally identical to the Coq twins / WP's Why3 goals.
 
-**The one holdout — `Pi_double_precision_bounds`.** Deferred honestly, not faked. The Coq side discharges
-it with **CoqInterval** (a 1-ulp-at-2⁻⁵¹, ~16-digit bracket on π). mathlib's standard π bounds
-(`Real.pi_gt_3141592` / `Real.pi_lt_3141593`) are only ~6 digits — *looser* than the bracket's endpoints,
-so they cannot prove it, and mathlib ships no `interval`-style reflective π tactic to close the gap cheaply.
-Same lemma that needed the extra CoqInterval dependency on the Coq side; the Lean twin waits on an
-equivalent tight-π facility.
+**`Pi_double_precision_bounds` — closed.** The Coq side discharges the 1-ulp-at-2⁻⁵¹ bracket on π with
+CoqInterval. The Lean twin discharges the *same* bracket from mathlib's 20-digit bracket
+`Real.pi_gt_d20` (`3.14159265358979323846 < π`) / `Real.pi_lt_d20` (`π < 3.14159265358979323847`): the
+2⁻⁵¹ window is ~16 digits, well inside 20, so each endpoint reduces to a rational comparison closed by
+`norm_num`. (An earlier note here claimed mathlib had no tight-enough π bound — that was wrong;
+`Real.pi_gt_d20`/`pi_lt_d20` in `Mathlib.Analysis.Real.Pi.Bounds` supply it.)
 
-What is **still not mechanical** for any twin is the 3-way structural equality check (`dualtp/`, spec §5.4)
-proving `Why3 ≡ Coq ≡ Lean` — so each is **partial**, not certified, until that tool exists.
+**3-way cross-check — leg 2 BUILT (`dualtp/`).** The syntactic Coq↔Lean leg (spec §5.4b) now exists and
+is CI-gated: a FOL canonicalizer (`dualtp/canonical.py`) unifying operator spellings, cross-prover
+symbol/type aliases (`Reals.Rtrigo1.PI ≡ Real.pi`, `Z ≡ Int ≡ ℤ`, …) and bound-variable names
+(de Bruijn) but **not** operand order; an adversarial corpus (`dualtp/corpus.py`, 21 positive + 21
+negative, with a meta-check that a weakened canonicalizer turns it red — spec §5.7); and the per-lemma
+`canon(Coq) == canon(Lean)` driver (`dualtp/crosscheck.py`). It passes for `Memory.separated_trans`,
+`Memory.included_trans`, `Memory.separated_included`, and `Trigonometry.Pi_double_precision_bounds`.
+Lemmas whose statement leaves the FOL fragment (Cfloat float predicates, Vset set-membership, the
+record-constructor equality of `separated_1`, the transcendental applications) are honestly listed in
+`dualtp/pairs.OUT_OF_FRAGMENT` — not silently passed; extending the canonicalizer to them is future work.
+
+What is **still not mechanical** is **leg 1** (semantic Why3↔Coq, §5.4a) for the pilot — reduced to one
+cast-cancellation lemma (see below) — so each family stays **partial** (cross-validated), not yet
+certified, until leg 1 also lands.
 
 **Leg 1 (semantic Why3↔Coq anchoring, spec §5.4a) — substantial progress, see the Leg 1 section below.**
 The stronger *semantic* check (Coq `separated_trans_Coq` ⟺ `formula_rep` of the Why3 AST, against the
@@ -57,7 +73,7 @@ Not certified until that lemma closes; do not report leg 1 as complete.
 The verified Lean proof depends on `{propext, Classical.choice, Quot.sound}` — the **standard** Lean kernel
 axiom set (what the `lean` skill's Quality Gate accepts). The spec's earlier "constructive" wording
 (`⊆ {propext, Quot.sound}`) was aspirational; `Classical.choice` is standard and effectively unavoidable
-(`by_cases`, `Int`), so `leanwp/check.sh` and `frama-c-dual-tp-spec.md §6` use the standard set and name it
+(`by_cases`, `Int`), so `leanwp/check.sh` and `../docs/frama-c-dual-tp-spec.md §6` use the standard set and name it
 honestly. This is exactly the code-vs-doc alignment the PyCSL audit flagged — applied here from day one.
 
 ## Leg 1 (semantic Why3↔Coq) — model BUILT (Rocq 9.0); obligation reduced to one cast lemma (HAND-OFF)
@@ -82,7 +98,22 @@ transitional rocq-elpi 3.2.0-on-Coq-8.20). `proofs/core` 33/33 .vo (incl. `Types
 
 **OPEN — one lemma, handed off for an interactive Coq session.** Compute
 `my_preds included_ps [] (pred_arg_list .. [Tvar a;..] (term_rep .. vv')) = includedb (vv' a) ..`
-(and the `separated` analogue). It is a genuine **UIP/cast-cancellation** proof, NOT mere bookkeeping:
+(and the `separated` analogue).
+
+> **Update (this session).** The helper goal is now *pinned exactly* and the full closing
+> toolkit is identified — see the recipe comment at the end of `leg1/Model.v` (projections
+> `D2A`/`D2Z` via `sort_inj`; push the `cast_arg_list` through `hlist_hd_cast`/`hlist_tl_cast`;
+> `get_arg_list_hnth` + `term_rep_irrel`; `term_rep_equation_3` for `Tvar`; collapse the
+> eq_rect tower with `scast_scast`/`scast_eq_uip`/`dom_cast_*`/`UIP_dec`; reindex `forall
+> d:domain` as `forall p:addr` via the `D2A`/`D2Z` bijections). **Axiom-base finding:** the
+> framework's `Cast.UIP` is derived from Stdlib `Eqdep.Eq_rect_eq.eq_rect_eq` (Streicher's K),
+> so `formula_rep` itself rests on `eq_rect_eq`; the closed obligation will be axiom-free *in
+> the leg-1 sources* but `Print Assumptions` will list the framework's `eq_rect_eq` — that is
+> leg 1's allowed `A_coq` base, not a new axiom. No `Admitted` is in `Model.v`. The remaining
+> step is mechanical dependent-cast cancellation (no missing lemmas), high-iteration in a
+> non-interactive build loop.
+
+It is a genuine **UIP/cast-cancellation** proof, NOT mere bookkeeping:
 the framework's decidable equalities on `sort`/`typesym` (sig-types + proof-field records) don't reduce
 under conversion, so `domain my_dom_aux addr_sort` is only *propositionally* `= addr` and
 `sym_sigma_args included_ps [] = pred_srts` holds via `sort_inj`; the three cast layers
