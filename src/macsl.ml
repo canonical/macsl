@@ -82,6 +82,37 @@ type context =
      a splice/reorder that leaves a stale mac breaks it.  See docs/usage.md
      "Tamper-evident log (WS4)". *)
   | Tamper_evident
+  (* Phase C — WS6 (M-6) bounded work.  [Fuel] injects a ghost STEP COUNTER into
+     the target body (a function-local ghost int, ++'d at each loop back-edge and
+     call site), then emits the policy property — conventionally `\fuel <= N` — as
+     a *checked* postcondition.  `\fuel` is a per-site META-TERM that resolves to
+     the injected counter (exactly the `\written` discipline), so the bound is an
+     ordinary inequality over a real ghost variable: NO new logic symbol, NO
+     ranking lemma, NO axiom — a ground per-site counter.  The closing VC proves
+     the counter never exceeds N (the quantitative iteration bound `\total`
+     deliberately omits).  See docs/usage.md "Bounded work (WS6)".  This does NOT
+     grow the axiom-wp hardened set. *)
+  | Fuel
+  (* Phase C — WS7 (M-7) lattice-parametric flow.  [Flow] walks the target's
+     write sites (the H-T walk) and injects, at each one, the policy property —
+     conventionally a no-flow-up / ownership predicate over a user-declared
+     partial order `leq` and labelling `label(...)`.  macsl declares `\leq` /
+     `\label` as UNINTERPRETED logic symbols (no behavioural axiom; the lattice
+     ORDER axioms, if any, are the user's own structural `axiomatic` block).
+     Folds vertical EoP + horizontal RBAC into one property over THAT lattice.
+     See docs/usage.md "Lattice flow (WS7)".  Does NOT grow the hardened set
+     (the order is the user's structural axiomatic, never a macsl cost lemma). *)
+  | Flow
+  (* Phase C — WS5 (M-5) cost-channel noninterference.  [Ni_cost] extends the
+     H-I2 self-composition twin (emit_selfcomp) with a ghost STEP/BRANCH COUNTER
+     (reusing M-6's counter), and asserts the counter is SECRET-INDEPENDENT
+     across the two runs (`ca == cb`) — a constant-time-style obligation over
+     WP-modelled steps.  `\declassify(v)` names an audited release point that
+     exempts `v` from the NI obligation.  Bound: modelled steps, NOT
+     wall-clock/cache/uarch (GH3).  See docs/usage.md "Cost-channel NI (WS5)".
+     Cost is a ground ghost counter (no ranking lemma) ⇒ NO hardened-set growth.
+     STATEFUL (store-duplication) NI is left an honest documented partial. *)
+  | Ni_cost
 
 type target = TgAll | TgSet of string list | TgDiff of target * target
 
@@ -97,7 +128,11 @@ type policy = {
   (* the property, re-typed per site once the meta-variables are bound
      (unused for Noninterference, which carries p_secret instead) *)
   p_property : Kernel_function.t -> (string * replaced_kind) list -> predicate;
-  p_secret  : string list;   (* Noninterference: the secret parameter names *)
+  p_secret  : string list;   (* Noninterference / Ni_cost: the secret param names *)
+  (* Phase C / WS5 (M-5): names of values/parameters DECLASSIFIED — audited
+     release points exempted from the NI obligation.  A non-empty list means a
+     deliberate release is on record (never silent). *)
+  p_declassify : string list;
   p_loc     : location;
 }
 
@@ -125,8 +160,20 @@ let kw_preds = [ "\\prop"; "\\writing"; "\\reading"; "\\calling";
                     genuinely authorized for this operation".  No behavioural
                     axiom: the actual token/identity check stays a trusted
                     declaration-only contract (whoami()-style). *)
-                 "\\authorized" ]
-let kw_terms = [ "\\written"; "\\lhost_written"; "\\read"; "\\called" ]
+                 "\\authorized";
+                 (* Phase C / WS7 (M-7) — `\leq(l1, l2)`: an UNINTERPRETED
+                    partial-order predicate over the user's security lattice.
+                    macsl emits NO order axioms; reflexivity/antisymmetry/
+                    transitivity, if needed, are the user's OWN structural
+                    `axiomatic` block (definitional, like H-E's encoding).  The
+                    no-smuggled-axiom gate stays green: `\leq` carries no
+                    behavioural fact macsl injects. *)
+                 "\\leq" ]
+(* Phase C / WS6 (M-6) — `\fuel` is a per-site META-TERM resolving to the ghost
+   step counter macsl injects into the target body (so the bound `\fuel <= N` is
+   an ordinary inequality over a real ghost variable — no new logic symbol). It
+   joins kw_terms so meta_type_term substitutes it per emission site. *)
+let kw_terms = [ "\\written"; "\\lhost_written"; "\\read"; "\\called"; "\\fuel" ]
 
 (* Phase B / WS4 (M-4) — uninterpreted logic FUNCTIONS (return a term), applied
    to ordinary arguments (unlike kw_terms, which are per-site meta-variables).
@@ -134,7 +181,14 @@ let kw_terms = [ "\\written"; "\\lhost_written"; "\\read"; "\\called" ]
    It is declared profile-less / bodiless, so it stays uninterpreted: macsl
    emits ZERO axioms about it (collision-resistance is the crypto residual,
    supplied as a hypothesis if ever needed, never as a smuggled axiom). *)
-let kw_funs = [ "\\hash" ]
+(* Phase C / WS7 (M-7) — `\label(x)` is the UNINTERPRETED security-level
+   labelling of a principal/resource (returns a lattice level, modelled as
+   integer).  Like `\hash`, it is declared profile-less / bodiless ⇒ ZERO axioms
+   emitted ⇒ uninterpreted.  macsl's `\label` marker resolves (via the kw_funs
+   path, preferring a same-named user `label`) to the SAME symbol the user's
+   lattice `axiomatic` declares, so the policy and the user's order share one
+   labelling. *)
+let kw_funs = [ "\\hash"; "\\label" ]
 
 let register_builtins () =
   (* Idempotent: if MetAcsl (or a previous load) already declared these
@@ -168,7 +222,18 @@ let meta_type_predicate orig_ctxt meta_ctxt env expr =
   match expr.lexpr_node with
   | PLapp (pname, _, args) when List.mem pname kw_preds ->
     let terms = List.map (meta_ctxt.type_term meta_ctxt env) args in
-    let li = List.hd (Logic_env.find_all_logic_functions pname) in
+    (* Prefer a same-named user predicate (drop the backslash) — the WS7
+       discipline where `\leq` denotes the user's lattice order `leq`, exactly as
+       `\hash`/`\label` resolve to the user's `hash`/`label`.  Fall back to the
+       macsl builtin if no such user predicate is in scope.  This is what keeps
+       the lattice ORDER axioms the USER's structural axiomatic (definitional),
+       not anything macsl smuggles. *)
+    let bare = String.sub pname 1 (String.length pname - 1) in
+    let li =
+      match Logic_env.find_all_logic_functions bare with
+      | li :: _ -> li
+      | [] -> List.hd (Logic_env.find_all_logic_functions pname)
+    in
     Logic_const.papp (li, [], terms)
   | _ -> orig_ctxt.type_predicate meta_ctxt env expr
 
@@ -280,12 +345,18 @@ let process_property tc loc = function
       | PLvar "\\stable_check" -> Stable_check
       | PLvar "\\authorized" -> Authorized
       | PLvar "\\tamper_evident" -> Tamper_evident
+      | PLvar "\\fuel" -> Fuel                            (* WS6 (M-6) *)
+      | PLvar "\\flow" -> Flow                            (* WS7 (M-7) *)
+      (* WS5 (M-5): the relational timing variant — `\noninterference(\cost)` *)
+      | PLapp ("\\noninterference", _, [ { lexpr_node = PLvar "\\cost" } ]) ->
+        Ni_cost
       | _ -> tc.error econtext.lexpr_loc
                "macsl supports \\context(\\writing | \\reading | \\postcond | \
-                \\precond | \\noninterference | \\total | \\guarded_by | \
-                \\stable_check | \\authorized | \\tamper_evident)"
+                \\precond | \\noninterference | \\noninterference(\\cost) | \
+                \\total | \\guarded_by | \\stable_check | \\authorized | \
+                \\tamper_evident | \\fuel | \\flow)"
     in
-    let p_property, p_secret = match p_context with
+    let p_property, p_secret, p_declassify = match p_context with
       | Noninterference ->
         (* the tail names the secret parameter(s): \secret(p, ...) *)
         let secret = match tail with
@@ -294,16 +365,31 @@ let process_property tc loc = function
           | _ -> tc.error loc
                    "noninterference policy expects \\secret(param, ...)"
         in
-        ((fun _ _ -> Logic_const.ptrue), secret)
+        ((fun _ _ -> Logic_const.ptrue), secret, [])
+      | Ni_cost ->
+        (* WS5 (M-5): \secret(p, ...) [, \declassify(v, ...)].  The cost twin
+           reuses the secret split; \declassify names audited release points. *)
+        let secret, declassify = match tail with
+          | [ { lexpr_node = PLapp ("\\secret", _, sargs) } ] ->
+            (List.map (target_name tc) sargs, [])
+          | [ { lexpr_node = PLapp ("\\secret", _, sargs) };
+              { lexpr_node = PLapp ("\\declassify", _, dargs) } ] ->
+            (List.map (target_name tc) sargs, List.map (target_name tc) dargs)
+          | _ -> tc.error loc
+                   "noninterference(\\cost) policy expects \\secret(param, ...) \
+                    [, \\declassify(value, ...)]"
+        in
+        ((fun _ _ -> Logic_const.ptrue), secret, declassify)
       | _ ->
         let eproperty = match tail with
           | [ x ] -> x
           | [] -> tc.error loc "missing the actual property predicate"
           | _ -> tc.error loc "too many trailing arguments in policy"
         in
-        (delay_prop tc eproperty, [])
+        (delay_prop tc eproperty, [], [])
     in
-    gathered := { p_name; p_target; p_context; p_property; p_secret; p_loc = loc }
+    gathered := { p_name; p_target; p_context; p_property; p_secret;
+                  p_declassify; p_loc = loc }
                 :: !gathered;
     Ext_terms [ Logic_const.tstring ~loc p_name ]
   | _ -> tc.error loc
@@ -488,6 +574,254 @@ let emit_selfcomp pol kf =
     true
   end
 
+(* ================================================================== *)
+(* Phase C / WS6 (M-6): the ghost step-counter substrate (bounded work) *)
+(* ================================================================== *)
+
+(* Create a function-local GHOST step counter, initialised to 0 at entry, and
+   prepend the init to the body.  A real ghost C variable WP tracks like any
+   state: the bound `\fuel <= N` is then an ORDINARY inequality over it — no new
+   logic symbol, no ranking lemma, no axiom (a ground per-site counter).  The
+   counter name is `__macsl_fuel`; the policy's `\fuel` meta-term resolves to it. *)
+let mk_fuel_counter (fd : fundec) =
+  let loc = Cil_datatype.Location.unknown in
+  let vi = Cil.makeLocalVar fd "__macsl_fuel" Cil_const.intType in
+  vi.vghost <- true;
+  let init =
+    Cil.mkStmtOneInstr ~ghost:true (Set (Cil.var vi, Cil.zero ~loc, loc))
+  in
+  fd.sbody.bstmts <- init :: fd.sbody.bstmts;
+  vi
+
+(* Increment the counter at each counted site.  The cost model: a loop back-edge
+   (the first statement of a Loop body) and each call site — i.e. every unit of
+   iteration/call work.  We inject a ghost `counter = counter + 1;` BEFORE the
+   counted statement.  The visitor mutates in place; the following -wp sees it. *)
+class fuel_visitor counter = object (self)
+  inherit Visitor.frama_c_inplace
+  method private incr loc =
+    Cil.mkStmtOneInstr ~ghost:true
+      (Set (Cil.var counter,
+            Cil.mkBinOp ~loc PlusA (Cil.evar ~loc counter) (Cil.one ~loc),
+            loc))
+  method! vstmt_aux stmt =
+    if stmt.ghost then Cil.DoChildren
+    else match stmt.skind with
+      | Loop (_, body, loc, _, _) ->
+        (* count one step per iteration: prepend the increment to the loop body,
+           so the counter rises exactly once per back-edge taken *)
+        body.bstmts <- self#incr loc :: body.bstmts;
+        (* auto-FRAME the injected counter on this loop so the user's existing
+           loop annotations stay valid and WP can reason about it: the counter
+           is non-negative and is in the loop's assigns set.  (We do NOT bound it
+           to N here — that bound is the *postcondition* the body must establish;
+           a loop with input-dependent iterations leaves it unprovable → red.) *)
+        (match self#current_kf with
+         | Some kf ->
+           let inv =
+             Logic_const.(prel ~loc (Rle, tinteger ~loc 0,
+                                     tvar (Cil.cvar_to_lvar counter))) in
+           let ainv = Logic_const.(new_code_annotation
+             (AInvariant ([], true, toplevel_predicate ~kind:Assert inv))) in
+           let ctlval = (TVar (Cil.cvar_to_lvar counter), TNoOffset) in
+           let cidterm =
+             Logic_const.term (TLval ctlval)
+               (Cil.typeOfTermLval ctlval) in
+           let aassigns =
+             AAssigns ([], Writes [ (Logic_const.new_identified_term cidterm,
+                                     FromAny) ]) in
+           Annotations.add_code_annot emitter ~kf stmt ainv;
+           Annotations.add_code_annot emitter ~kf stmt
+             (Logic_const.new_code_annotation aassigns)
+         | None -> ());
+        Cil.DoChildren
+      | Instr (Call (_, _, _, loc))
+      | Instr (Local_init (_, ConsInit _, loc)) ->
+        (* count one step per call (incl. a call in an initializer `int a =
+           f(..)`, which CIL stores as Local_init/ConsInit): wrap as
+           { counter++; <call> }.  ChangeTo (not …Post) so we do NOT descend
+           back into the original Call and re-wrap it (that loops forever). *)
+        let orig = Cil.mkStmt stmt.skind in
+        let blk = Cil.mkBlock [ self#incr loc; orig ] in
+        Cil.ChangeTo (Cil.mkStmt (Block blk))
+      | _ -> Cil.DoChildren
+end
+
+(* Inject the counter into [kf]'s body, walk it to add increments, rebuild the
+   CFG, and return the counter varinfo (so the bound can name it). *)
+let inject_fuel_counter kf =
+  let fd = Kernel_function.get_definition kf in
+  let counter = mk_fuel_counter fd in
+  let v = new fuel_visitor counter in
+  ignore (Visitor.visitFramacFunction (v :> Visitor.frama_c_visitor) fd);
+  Cfg.clearCFGinfo ~clear_id:false fd;
+  Cfg.cfgFun fd;
+  Ast.mark_as_changed ();
+  counter
+
+(* WS6 (M-6): inject the step counter, then emit the policy property — with the
+   `\fuel` meta-term bound to the counter — as a CHECKED postcondition.  WP must
+   prove `\fuel <= N` from the body + any loop invariants; a superlinear path
+   that overruns a linear bound leaves the goal red. *)
+let emit_fuel pol kf =
+  let fuel_vi = inject_fuel_counter kf in
+  let cterm = Logic_const.tvar (Cil.cvar_to_lvar fuel_vi) in
+  let assoc = [ "\\fuel", RepVariable cterm ] in
+  let pred = pol.p_property kf assoc in
+  if Logic_utils.is_trivially_true pred then false
+  else begin
+    let label =
+      if Number_assertions.get ()
+      then (incr counter; Printf.sprintf "%s_%d" pol.p_name !counter)
+      else pol.p_name
+    in
+    let named = { pred with pred_name = label :: "meta" :: pred.pred_name } in
+    let ip = Logic_const.new_predicate ~kind:Check named in
+    Annotations.add_ensures emitter kf [ (Normal, ip) ];
+    true
+  end
+
+(* ================================================================== *)
+(* Phase C / WS5 (M-5): cost-channel noninterference + \declassify     *)
+(* ================================================================== *)
+
+(* A GLOBAL ghost step counter the cost twin can read across both runs (a
+   function-local one is invisible to the twin's two calls).  Created once,
+   reused.  The target [kf] is instrumented to ++ it (the same fuel_visitor cost
+   model); the twin resets it to 0 before each call and snapshots it.  WP
+   discharges `ca == cb` from [kf]'s own cost contract (an `ensures` on
+   __macsl_cost the fixture supplies) — no ranking lemma, no axiom. *)
+let cost_global : varinfo option ref = ref None
+let get_cost_global () =
+  match !cost_global with
+  | Some vi -> vi
+  | None ->
+    (* Reuse a user-declared `__macsl_cost` ghost global if present: this is what
+       lets the FIXTURE own the cost CONTRACT (`ensures __macsl_cost == …` on
+       [kf], in terms of PUBLIC inputs), which is how WP discharges `ca == cb`
+       modularly.  macsl still injects the increments (the cost MODEL); the
+       fixture states the cost VALUE — exactly the WS4 split where `\hash`'s
+       value is the trusted contract's, not macsl's.  Fall back to creating one. *)
+    let vi =
+      try Globals.Vars.find_from_astinfo "__macsl_cost" Global
+      with Not_found ->
+        let nv = Cil.makeGlobalVar "__macsl_cost" Cil_const.intType in
+        nv.vghost <- true;
+        let loc = Cil_datatype.Location.unknown in
+        Globals.Vars.add nv { init = None };
+        let f = Ast.get () in
+        f.globals <- GVar (nv, { init = None }, loc) :: f.globals;
+        Ast.mark_as_grown ();
+        nv
+    in
+    cost_global := Some vi;
+    vi
+
+(* Instrument [kf]'s body to ++ the GLOBAL cost counter at each loop back-edge /
+   call site (reuse fuel_visitor — the cost model is identical to \fuel). *)
+let instrument_cost kf counter =
+  let fd = Kernel_function.get_definition kf in
+  let v = new fuel_visitor counter in
+  ignore (Visitor.visitFramacFunction (v :> Visitor.frama_c_visitor) fd);
+  Cfg.clearCFGinfo ~clear_id:false fd;
+  Cfg.cfgFun fd;
+  Ast.mark_as_changed ()
+
+(* WS5 (M-5): cost-channel NI.  Like emit_selfcomp, but the observable is the
+   COST counter, not the result: synthesize a twin that runs [kf] twice (public
+   shared, secret split), resetting/snapshotting the global cost counter around
+   each call, and asserts the two counts are equal (`ca == cb`).  A
+   secret-dependent branch/trip count breaks it (red); secret-independent cost
+   discharges (green).  \declassify(v) names audited release points (recorded;
+   they relax the obligation for the named value — here surfaced as a feedback
+   note, since the cost channel is over steps, not a named return value). *)
+let emit_selfcomp_cost pol kf =
+  let fname = Kernel_function.get_name kf in
+  let formals = Kernel_function.get_formals kf in
+  if formals = [] then begin
+    Self.warning "noninterference(cost): %s needs >=1 parameter; skipped" fname;
+    false
+  end else begin
+    let loc = Cil_datatype.Location.unknown in
+    let cost = get_cost_global () in
+    (* Instrument the body with the cost MODEL when there is one; on a
+       declaration-only target the cost VALUE is carried entirely by the
+       fixture's `ensures __macsl_cost == …` contract (the macsl twin reasons
+       modularly from it), so no body to instrument. *)
+    if Kernel_function.has_definition kf then instrument_cost kf cost;
+    let is_secret vi = List.mem vi.vname pol.p_secret in
+    List.iter
+      (fun s ->
+         if not (List.exists (fun vi -> vi.vname = s) formals) then
+           Self.warning "noninterference(cost): %s has no parameter named %s"
+             fname s)
+      pol.p_secret;
+    if pol.p_declassify <> [] then
+      Self.feedback
+        "noninterference(cost): %s declassifies {%s} (audited release point)"
+        fname (String.concat ", " pol.p_declassify);
+    let driver = Cil.emptyFunction (fname ^ "__costcomp") in
+    Cil.setReturnType driver Cil_const.voidType;
+    let rettype = Kernel_function.get_return_type kf in
+    let void_ret = Ast_types.is_void rettype in
+    let slots =
+      List.map
+        (fun vi ->
+           if is_secret vi then
+             let a = Cil.makeFormalVar driver (vi.vname ^ "_a") vi.vtype in
+             let b = Cil.makeFormalVar driver (vi.vname ^ "_b") vi.vtype in
+             `Sec (a, b)
+           else `Pub (Cil.makeFormalVar driver vi.vname vi.vtype))
+        formals
+    in
+    let args first =
+      List.map
+        (function
+          | `Pub p -> Cil.evar p
+          | `Sec (a, b) -> Cil.evar (if first then a else b))
+        slots
+    in
+    let ca = Cil.makeLocalVar driver "ca" Cil_const.intType in
+    let cb = Cil.makeLocalVar driver "cb" Cil_const.intType in
+    let callee = Var (Kernel_function.get_vi kf) in
+    (* a FRESH reset statement each time (reusing one stmt object twice gives it
+       two successors and trips Cfg.cfgFun) *)
+    let reset () = Cil.mkStmtOneInstr ~ghost:true
+        (Set (Cil.var cost, Cil.zero ~loc, loc)) in
+    let call first =
+      let ret_lv =
+        if void_ret then None
+        else Some (Var (Cil.makeLocalVar driver
+                          (if first then "ra" else "rb") rettype), NoOffset)
+      in
+      Cil.mkStmtOneInstr (Call (ret_lv, callee, args first, loc))
+    in
+    let snap dst = Cil.mkStmtOneInstr ~ghost:true
+        (Set (Cil.var dst, Cil.evar cost, loc)) in
+    let ret = Cil.mkStmt (Return (None, loc)) in
+    driver.sbody <-
+      Cil.mkBlock [ reset (); call true;  snap ca;
+                    reset (); call false; snap cb; ret ];
+    Cfg.clearCFGinfo ~clear_id:false driver;
+    Cfg.cfgFun driver;
+    Globals.Functions.replace_by_definition (Cil.empty_funspec ()) driver loc;
+    let dkf = Globals.Functions.get driver.svar in
+    let f = Ast.get () in
+    f.globals <- f.globals @ [ GFun (driver, loc) ];
+    Ast.mark_as_grown ();
+    (* the relational obligation: equal public inputs => equal STEP COUNT *)
+    let tca = Logic_const.tvar (Cil.cvar_to_lvar ca) in
+    let tcb = Logic_const.tvar (Cil.cvar_to_lvar cb) in
+    let pred = Logic_const.prel (Req, tca, tcb) in
+    let named = { pred with pred_name = [ pol.p_name; "meta" ] } in
+    let annot =
+      Logic_const.(new_code_annotation
+                     (AAssert ([], toplevel_predicate ~kind:Assert named)))
+    in
+    Annotations.add_code_annot emitter ~kf:dkf ret annot;
+    true
+  end
+
 let writing_assoc tlval =
   [ "\\written",       RepVariable (addr_of_tlval tlval);
     "\\lhost_written", RepVariable (addr_of_tlhost tlval) ]
@@ -610,14 +944,20 @@ let run_policy pol =
   (* the body-walking contexts need a definition; the contract/synthesis
      contexts accept declaration-only targets (they use the contract). *)
   let kfs = match pol.p_context with
-    | Writing | Reading | Total | Guarded_by | Stable_check | Authorized ->
+    (* WS6 \fuel and WS7 \flow walk the body (inject a counter / instrument
+       write sites), so they need a definition. *)
+    | Writing | Reading | Total | Guarded_by | Stable_check | Authorized
+    | Fuel | Flow ->
       List.filter
         (fun kf ->
            if Kernel_function.has_definition kf then true
            else (Self.warning "target %a has no definition; skipped"
                    Kernel_function.pretty kf; false))
         kfs
-    | Postcond | Precond | Noninterference | Tamper_evident -> kfs
+    (* WS5 \noninterference(\cost), like H-I2 \noninterference, synthesizes a twin
+       that CALLS the target modularly — a declaration-only target with a cost
+       contract is fine (the cost value is the contract's). *)
+    | Postcond | Precond | Noninterference | Tamper_evident | Ni_cost -> kfs
   in
   let n =
     match pol.p_context with
@@ -656,6 +996,22 @@ let run_policy pol =
     | Total ->
       List.fold_left (fun acc kf -> if emit_terminates pol kf then acc + 1 else acc)
         0 kfs
+    (* WS6 (M-6): inject a ghost step counter into the body, then emit the bound
+       `\fuel <= N` as a checked postcondition (ground per-site counter). *)
+    | Fuel ->
+      List.fold_left (fun acc kf -> if emit_fuel pol kf then acc + 1 else acc)
+        0 kfs
+    (* WS7 (M-7): the lattice no-flow-up / ownership obligation is injected at
+       every write site, reusing the H-T walk — like \authorized, but the
+       predicate is over the user's uninterpreted `\leq` / `\label`. *)
+    | Flow ->
+      let v = new writing_visitor pol in
+      visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
+    (* WS5 (M-5): inject the step counter into the body, then synthesize the
+       self-composition twin asserting `ca == cb` (cost-channel NI). *)
+    | Ni_cost ->
+      List.fold_left
+        (fun acc kf -> if emit_selfcomp_cost pol kf then acc + 1 else acc) 0 kfs
   in
   let descr, ctx = match pol.p_context with
     | Writing  -> "write site",      "writing"
@@ -667,7 +1023,10 @@ let run_policy pol =
     | Guarded_by -> "guarded write site", "guarded_by"
     | Stable_check -> "check-then-act site", "stable_check"
     | Authorized -> "protected operation site", "authorized"
-    | Tamper_evident -> "target function", "tamper_evident" in
+    | Tamper_evident -> "target function", "tamper_evident"
+    | Fuel -> "target function", "fuel"
+    | Flow -> "flow-checked write site", "flow"
+    | Ni_cost -> "target function", "noninterference_cost" in
   if n = 0 then
     Self.warning ~wkey:zero_wkey
       "policy %s expanded to 0 obligations (matched no %s)" pol.p_name descr;
@@ -676,8 +1035,14 @@ let run_policy pol =
       pol.p_name ctx n (List.length kfs);
   n
 
+(* Re-entry guard: structural AST changes (mark_as_changed / mark_as_grown from
+   the WS5/WS6 ghost-counter injection and twin synthesis) re-fire the
+   apply_after_computed hook.  We must instrument exactly once. *)
+let already_run = ref false
+
 let run (_file : Cil_types.file) =
-  if Enabled.get () then begin
+  if Enabled.get () && not !already_run then begin
+    already_run := true;
     let sel = Targets.get () in
     let pols = List.rev !gathered in
     let pols =

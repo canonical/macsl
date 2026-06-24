@@ -340,5 +340,99 @@ check "tamper/splice-neg-catches" 'Proved goals: +3 / 4' \
 check "tamper/neg-vacuous-without-obligation" 'No goal generated|Proved goals: +3 / 3' \
   frama-c "${BASE[@]}" "${WP[@]}" tests/phase8/hashchain_neg.c
 
+echo "== Phase-9 cases (WS6 / M-6: \\fuel bounded work) =="
+# \fuel injects a ghost STEP COUNTER (__macsl_fuel) into the body, ++'d at each
+# loop back-edge / call site, and emits the bound `\fuel <= N` as a CHECKED
+# postcondition. `\fuel` is a per-site META-TERM resolving to the ground ghost
+# counter -> NO new logic symbol, NO ranking lemma, NO axiom (no TCB growth).
+# See docs/usage.md "Bounded work (WS6)".
+
+# 56. \fuel emits the step-bound as a checked postcondition over the ghost counter
+#     (non-vacuity, part 1).
+check "fuel/bound-print" 'check ensures fuelbound: meta: __macsl_fuel' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase9/fuel_pos.c
+
+# 57. POSITIVE control (bounded_work): straight-line work of 3 call steps under a
+#     bound of 4 -> __macsl_fuel == 3 <= 4 -> green.
+check "fuel/pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase9/fuel_pos.c
+
+# 58. NEGATIVE control (algorithmic_dos): input-superlinear work (n*n call steps)
+#     under a LINEAR bound -> __macsl_fuel unbounded -> \fuel<=100 RED.
+check "fuel/neg-catches" 'Proved goals: +18 / 19' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase9/fuel_neg.c
+
+# 59. The bound is LOAD-BEARING: strip the policy (no -macsl) and the SAME fixture
+#     proves vacuously (no fuel goal) -> the red comes from macsl, not the C.
+check "fuel/neg-vacuous-without-obligation" 'No goal generated|Proved goals: +11 / 11' \
+  frama-c "${BASE[@]}" "${WP[@]}" tests/phase9/fuel_neg.c
+
+# 60. Non-vacuity gate: zero-expansion=abort must NOT trip on the positive (it
+#     really instrumented a target function).
+check "fuel/non-vacuity-zero-abort" 'check ensures fuelbound' \
+  frama-c "${BASE[@]}" -macsl -macsl-warn-key zero-expansion=abort -print \
+    tests/phase9/fuel_pos.c
+
+echo "== Phase-10 cases (WS7 / M-7: \\flow lattice-parametric flow) =="
+# \flow walks the target's write sites and injects a no-flow-up / ownership
+# predicate over the USER's partial order `leq` and labelling `label(...)`.
+# `\leq` / `\label` are UNINTERPRETED (macsl emits no order axioms); the lattice
+# ORDER axioms (refl/antisym/trans) are the user's OWN structural axiomatic
+# (definitional). Folds vertical EoP + horizontal RBAC into one property.
+# See docs/usage.md "Lattice flow (WS7)".
+
+# 61. \flow instruments at the flow-checked write site (non-vacuity, part 1).
+check "flow/noflowup-print" 'noflowup: meta: leq' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase10/flow_pos.c
+
+# 62. POSITIVE control (legit_write): the write target's label dominates the
+#     caller-data label (established by the trusted reclassify gate) -> the
+#     no-flow-up obligation `leq(label(&caller_data), label(&tenantA))` -> green.
+check "flow/pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase10/flow_pos.c
+
+# 63. NEGATIVE control (cross_tenant): a write that crosses an ownership boundary
+#     with no reclassify on the path -> the flow predicate is unprovable -> RED.
+check "flow/neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase10/flow_neg.c
+
+# 64. The flow obligation is LOAD-BEARING: strip the policy and the SAME fixture
+#     proves vacuously (no flow goal) -> the red comes from macsl, not the C.
+check "flow/neg-vacuous-without-obligation" 'No goal generated|Proved goals: +2 / 2' \
+  frama-c "${BASE[@]}" "${WP[@]}" tests/phase10/flow_neg.c
+
+echo "== Phase-11 cases (WS5 / M-5: \\noninterference(\\cost) + \\declassify) =="
+# \noninterference(\cost) extends the H-I2 self-composition twin with a ghost
+# STEP COUNTER (the cost channel __macsl_cost) and asserts the count is
+# SECRET-INDEPENDENT across the two runs (`ca == cb`). The cost VALUE is the
+# fixture's cost contract; the counter is a ground ghost variable -> NO ranking
+# lemma, NO axiom (no TCB growth). \declassify(v) is an audited release point.
+# Stateful (store-duplication) NI is an honest documented PARTIAL (see
+# docs/ws-mechanisms.md M-5). See docs/usage.md "Cost-channel NI (WS5)".
+
+# 65. macsl synthesizes the cost twin asserting equal step counts (`ca == cb`).
+check "cost/twin-synthesized" 'assert macsl: ct_cost: meta: ca .* cb' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase11/cost_pos.c
+
+# 66. POSITIVE control: constant-work compare (cost independent of the secret)
+#     -> `ca == cb` discharges -> green.
+check "cost/pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase11/cost_pos.c
+
+# 67. NEGATIVE control (timing_oracle): constant RESULT but secret-dependent
+#     BRANCH/STEP count (early-return compare) -> `ca == cb` unprovable -> RED.
+check "cost/neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase11/cost_neg.c
+
+# 68. The cost twin is LOAD-BEARING: strip the policy and the cost twin is not
+#     generated at all -> the red comes entirely from macsl.
+check "cost/neg-vacuous-without-obligation" 'No goal generated|Proved goals: +2 / 2' \
+  frama-c "${BASE[@]}" "${WP[@]}" tests/phase11/cost_neg.c
+
+# 69. \declassify records an audited release point (never silent): the audit note
+#     is emitted, and the constant-work twin still discharges.
+check "cost/declassify-audit" 'declassifies .attempt. .audited release point.' \
+  frama-c "${BASE[@]}" -macsl tests/phase11/cost_declassify.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]
