@@ -22,7 +22,7 @@ jobs:
   coq:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v3
         with:
@@ -79,9 +79,9 @@ jobs:
   dualtp:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Run dualtp leg-2 gate (canonicalizer corpus + Coq<->Lean cross-check)
@@ -90,7 +90,7 @@ jobs:
   lean:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install elan + Lean 4.31.0
         run: |
           curl -sSfL https://elan.lean-lang.org/elan-init.sh \
@@ -108,7 +108,7 @@ jobs:
   lean-mathlib:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install elan + Lean 4.31.0
         run: |
           curl -sSfL https://elan.lean-lang.org/elan-init.sh \
@@ -130,7 +130,7 @@ jobs:
   leg1:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v3
         with:
