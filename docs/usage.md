@@ -53,6 +53,7 @@ A HAPPY policy is a global ACSL annotation introduced by the `happy` keyword:
       \targets(<TS>),           // \ALL  |  {f, g, ...}
       \context(<C>),            // \writing | \reading | \postcond | \precond
                                 //   | \noninterference | \total | \guarded_by | \stable_check
+                                //   | \authorized | \tamper_evident
       P ;                       // an ACSL predicate; may mention the context meta-variable
 */
 ```
@@ -212,6 +213,69 @@ the WS1 analog of `verify_token`: the rely-guarantee discharge of that assumptio
 > **race-family crosswalk cell stays TRUSTED (never PROVED)** until **WS1 stage 2 (rely-guarantee)**
 > lands. Treating a stage-1 green as race-safety is precisely the coherent-and-wrong this bound guards.
 
+## Principal identity (WS3, M-3)
+
+- **`\context(\authorized)`** (WS3) walks the target's **write sites** (the H-T walk) and injects, at
+  each protected operation, the *checked* assertion the policy supplies — conventionally
+  `authorized(current_principal, OP)` over the macsl uninterpreted `\authorized` predicate (or a
+  user-declared `authorized(...)`). Where H-S/`\precond` proved only **"you called the checker"** (some
+  authentication ran), `\authorized` proves the **principal is genuinely bound** at the operation: a
+  forged/literal principal does **not** satisfy `authorized` without the trusted binding.
+
+  ```c
+  #define OP_WRITE 1
+  int current_principal = 0;
+  /*@ axiomatic Principal { predicate authorized(integer p, integer op) reads p; } */
+  /*@ assigns current_principal; ensures authorized(current_principal, OP_WRITE); */
+  void authenticate(void);                    // trusted identity oracle (declaration-only)
+
+  /*@ happy \prop, \name("principal_bound"), \targets({protected_op}),
+        \context(\authorized), authorized(current_principal, OP_WRITE);
+  */
+  ```
+  WP must prove `authorized(current_principal, OP_WRITE)` at each protected write. A path that mutates the
+  resource against a **forged** principal (set by fiat, not established by the trusted `authenticate()`
+  contract) leaves the obligation **red, in the function that forged the identity**. See
+  `tests/phase8/principal_{pos,neg}.c` (the negative is `forged_principal`).
+
+> **Bound (GH1).** `\authorized` is **uninterpreted** — no behavioural axiom. macsl proves "the principal
+> is bound at the op", **not** that the token/identity scheme is unforgeable. The *establishing*
+> hypothesis (`authenticate()` `ensures authorized(...)`) is a **trusted declaration-only contract**, the
+> WS3 analog of `verify_token`; the real `whoami()`/token check stays the trusted boundary.
+
+## Tamper-evident log (WS4, M-4)
+
+- **`\context(\tamper_evident)`** (WS4) emits `P` as a **checked postcondition** (like `\postcond`),
+  where `P` is the **hash-chain** discipline — this strengthens the H-R repudiation obligation from a
+  *length* predicate ("the log grew") to a **per-record chain**:
+
+  ```c
+  struct entry { int rec; int mac; };
+  struct entry logbuf[8];
+  int len = 0;
+  /*@ axiomatic Hash { logic integer hash(integer prev, integer rec); } */   // the single H
+  /*@ assigns \nothing; ensures \result == hash(prev, rec); */               // trusted MAC primitive
+  int compute_mac(int prev, int rec);
+
+  /*@ happy \prop, \name("hashchain"), \targets({append_record}),
+        \context(\tamper_evident),
+        \forall integer i; 0 < i < len ==>
+          logbuf[i].mac == \hash(logbuf[i-1].mac, logbuf[i].rec);
+  */
+  ```
+  Every committed record commits the running hash of its predecessor, so a **splice/reorder** that leaves
+  a stale `mac` breaks the chain and the postcondition goes **red**. macsl's `\hash` marker resolves to
+  the single uninterpreted logic function `hash` (= H) — the same symbol the trusted `compute_mac`
+  contract names — so a correct append (recompute the chain forward via `compute_mac`) discharges it.
+  See `tests/phase8/hashchain_{pos,neg}.c` (the negative is `splice_log`).
+
+> **Bound (GH1) — the crypto residual.** `\hash` (= H) is **uninterpreted**: macsl declares/uses it with
+> **no behavioural axiom** (no injectivity, no collision-resistance). macsl proves only the **chaining
+> discipline** (every append extends the chain; nothing rewrites a committed link). That an attacker
+> cannot forge a *second preimage with the same mac* (collision-resistance of H) is the **trusted crypto
+> boundary**, supplied as a hypothesis if ever needed — **never** an axiom macsl smuggles. This is H-R
+> hardening, **not** a quantitative mechanism, so it does **not** grow the `axiom-wp` hardened set.
+
 ## Resource vocabulary (decision — Issue 4, settled)
 
 `\fuel` is the **canonical step-budget spine**; `\cost` and `\resource` are its two **projections**, and
@@ -253,9 +317,11 @@ misdiagnosis (see [design.md](design.md)).
 ## Limitations (Phases 0–1)
 
 - Contexts implemented: `\writing` (H-T), `\reading` (H-I1), `\postcond` (H-R/H-E), `\precond` (H-S),
-  `\noninterference` (H-I2), `\total` (H-D), and `\guarded_by` / `\stable_check` (WS1 stage 1, see
-  "Concurrency" above). `\calling`/invariants and the `\fguard`/`\tguard` guards are on the roadmap
-  (`happy-roadmap.md`); `\fuel`/`\cost`/`\resource` are vocabulary-only (WS6, see above).
+  `\noninterference` (H-I2), `\total` (H-D), `\guarded_by` / `\stable_check` (WS1 stage 1, see
+  "Concurrency" above), `\authorized` (WS3 / M-3, see "Principal identity"), and `\tamper_evident`
+  (WS4 / M-4, see "Tamper-evident log"). `\calling`/invariants and the `\fguard`/`\tguard` guards are on
+  the roadmap (`happy-roadmap.md`); `\fuel`/`\cost`/`\resource` are vocabulary-only (WS6, see above);
+  `\noninterference(\cost)` (M-5), `\flows_to` (M-7) remain design stubs (`ws-mechanisms.md`).
 - **Read sites** = lvalues occurring inside expressions (rvalues, conditions, call args, return,
   and offset indices). A read of `R` through the *index* of a write target — e.g. `a[secret_i] = 0` —
   is covered (the index `i` is an expression); but address-taken reads (`&R`) are deliberately not
