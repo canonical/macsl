@@ -280,5 +280,65 @@ check "race/non-vacuity-zero-abort" 'assert macsl: priv_guard' \
   frama-c "${BASE[@]}" -macsl -macsl-warn-key zero-expansion=abort -print \
     tests/phase7/race_priv_pos.c
 
+echo "== Phase-8 cases (WS3 \\authorized principal identity + WS4 \\tamper_evident) =="
+# WS3 (M-3): \authorized binds a protected op to a PRINCIPAL IDENTITY, not a
+# boolean. The injected obligation is authorized(current_principal, OP) over an
+# UNINTERPRETED `authorized` predicate. Where H-S proved "you called the
+# checker", M-3 proves the principal is GENUINE: a forged/literal principal does
+# NOT satisfy `authorized` without the trusted authenticate() binding. The token
+# check itself stays a trusted declaration-only contract (GH1).
+
+# 47. \authorized instruments at the protected write site (non-vacuity, part 1).
+check "authz/principal-print" 'assert macsl: principal_bound: meta: authorized' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase8/principal_pos.c
+
+# 48. POSITIVE control: caller runs authenticate() -> the principal is genuinely
+#     bound -> authorized(current_principal, OP_WRITE) holds -> all green.
+check "authz/principal-pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase8/principal_pos.c
+
+# 49. NEGATIVE control (forged_principal): the op runs against a FORGED principal
+#     with no authenticate() -> authorized(..) unprovable at the site -> red.
+check "authz/forged-neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase8/principal_neg.c
+
+# 50. The obligation is LOAD-BEARING: strip the policy (no -macsl) and the SAME
+#     forged fixture proves vacuously -> the red comes from macsl, not the C.
+check "authz/neg-vacuous-without-obligation" 'No goal generated|Proved goals: +2 / 2' \
+  frama-c "${BASE[@]}" "${WP[@]}" tests/phase8/principal_neg.c
+
+# 51. Non-vacuity gate: zero-expansion=abort must NOT trip on the positive (it
+#     really expanded over a protected-op site).
+check "authz/non-vacuity-zero-abort" 'assert macsl: principal_bound' \
+  frama-c "${BASE[@]}" -macsl -macsl-warn-key zero-expansion=abort -print \
+    tests/phase8/principal_pos.c
+
+# WS4 (M-4): \tamper_evident strengthens the repudiation obligation from a
+# length predicate to a HASH CHAIN: logbuf[i].mac == \hash(logbuf[i-1].mac,
+# logbuf[i].rec). `\hash` (= H) is the SINGLE uninterpreted logic function; macsl
+# proves the CHAINING DISCIPLINE only. Collision-resistance of H is the crypto
+# residual (GH1), NOT proved and NOT a smuggled axiom.
+
+# 52. \tamper_evident emits the chain as a checked postcondition (the injected
+#     obligation prints as `check ensures hashchain: meta:` — the label wraps to
+#     the next line, so match it there).
+check "tamper/chain-print" 'hashchain: meta:' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase8/hashchain_pos.c
+
+# 53. POSITIVE control: append_record links the new slot via compute_mac
+#     (\result == hash(prev,rec)) -> the chain is extended -> all green.
+check "tamper/chain-pos" 'Proved goals: +8 / 8' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase8/hashchain_pos.c
+
+# 54. NEGATIVE control (splice_log): rewriting an already-committed record
+#     without recomputing the chain -> chain postcondition unprovable -> red.
+check "tamper/splice-neg-catches" 'Proved goals: +3 / 4' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase8/hashchain_neg.c
+
+# 55. The chain obligation is LOAD-BEARING: strip the policy and the SAME splice
+#     fixture proves vacuously -> the red comes from macsl, not the C.
+check "tamper/neg-vacuous-without-obligation" 'No goal generated|Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" tests/phase8/hashchain_neg.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

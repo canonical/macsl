@@ -64,6 +64,24 @@ type context =
      obligation is exactly lock-held-at-access (resp. guard-stable-marker),
      nothing stronger.  See docs/usage.md "Concurrency (WS1 stage 1)". *)
   | Guarded_by | Stable_check
+  (* Phase B — WS3 (M-3) principal identity.  [Authorized] walks the target's
+     write sites (the H-T walk) and injects, at each protected operation, the
+     *checked* assertion the policy supplies — `authorized(current_principal,
+     OP)` over an UNINTERPRETED `authorized` predicate.  Where H-S/\precond only
+     proved "you called the checker", this proves the principal is GENUINE: the
+     literal/forged principal does not satisfy `authorized` without the binding.
+     `authorized` carries NO behavioural axiom (the token check stays a trusted
+     declaration-only contract).  See docs/usage.md "Principal identity (WS3)". *)
+  | Authorized
+  (* Phase B — WS4 (M-4) tamper-evident hash-chain log.  [Tamper_evident] emits
+     `P` as a *checked* postcondition (like Postcond), where `P` is the chaining
+     discipline `logbuf[i].mac == \hash(logbuf[i-1].mac, record(i))` over the
+     SINGLE uninterpreted logic function `\hash` (= H).  `\hash` stays
+     uninterpreted (collision-resistance is the crypto residual, NOT an axiom
+     macsl smuggles); macsl proves only that every append extends the chain, so
+     a splice/reorder that leaves a stale mac breaks it.  See docs/usage.md
+     "Tamper-evident log (WS4)". *)
+  | Tamper_evident
 
 type target = TgAll | TgSet of string list | TgDiff of target * target
 
@@ -101,8 +119,22 @@ let kw_preds = [ "\\prop"; "\\writing"; "\\reading"; "\\calling";
                     Declared with no profile (the typer resolves them via the
                     kw_preds path in meta_type_predicate), so they carry NO
                     behavioural axiom — exactly the no-smuggled-axiom contract. *)
-                 "\\held"; "\\stable" ]
+                 "\\held"; "\\stable";
+                 (* Phase B / WS3 (M-3) — `\authorized(principal, op)`: an
+                    UNINTERPRETED predicate marking "the current principal is
+                    genuinely authorized for this operation".  No behavioural
+                    axiom: the actual token/identity check stays a trusted
+                    declaration-only contract (whoami()-style). *)
+                 "\\authorized" ]
 let kw_terms = [ "\\written"; "\\lhost_written"; "\\read"; "\\called" ]
+
+(* Phase B / WS4 (M-4) — uninterpreted logic FUNCTIONS (return a term), applied
+   to ordinary arguments (unlike kw_terms, which are per-site meta-variables).
+   `\hash(prev_mac, record)` is the single uninterpreted hash H of the chain.
+   It is declared profile-less / bodiless, so it stays uninterpreted: macsl
+   emits ZERO axioms about it (collision-resistance is the crypto residual,
+   supplied as a hypothesis if ever needed, never as a smuggled axiom). *)
+let kw_funs = [ "\\hash" ]
 
 let register_builtins () =
   (* Idempotent: if MetAcsl (or a previous load) already declared these
@@ -116,7 +148,17 @@ let register_builtins () =
   List.iter (fun n -> if not (already n) then Logic_builtin.register (mk true n))
     kw_preds;
   List.iter (fun n -> if not (already n) then Logic_builtin.register (mk false n))
-    kw_terms
+    kw_terms;
+  (* WS4: `\hash` is an uninterpreted logic FUNCTION (returns a term).  We give
+     it a concrete `integer` return type (not the polymorphic `dummy`) so the
+     chaining equality `mac == \hash(...)` type-checks against an integer mac.
+     Still profile-less / bodiless ⇒ uninterpreted ⇒ ZERO axioms emitted. *)
+  let mk_fun bl_name =
+    { bl_name; bl_labels = []; bl_params = []; bl_profile = [];
+      bl_type = Some Linteger }
+  in
+  List.iter (fun n -> if not (already n) then Logic_builtin.register (mk_fun n))
+    kw_funs
 
 (* ------------------------------------------------------------------ *)
 (* Custom typing context: substitute the meta-variables               *)
@@ -132,6 +174,25 @@ let meta_type_predicate orig_ctxt meta_ctxt env expr =
 
 let meta_type_term termassoc orig_ctxt meta_ctxt env expr =
   match expr.lexpr_node with
+  (* WS4: an uninterpreted logic function applied to ORDINARY terms (type the
+     arguments through the meta context, rebuild the application against the
+     builtin logic_info).  This is the term-level analog of meta_type_predicate
+     for kw_preds. *)
+  | PLapp (fname, _, args) when List.mem fname kw_funs ->
+    let terms = List.map (meta_ctxt.type_term meta_ctxt env) args in
+    (* Prefer a same-named logic function the fixture declared (without the
+       backslash) — exactly the WS1 discipline where `\held` and a fixture
+       `held` denote the SAME uninterpreted symbol — so the policy's `\hash`
+       and the C-side trusted contract's `hash` share one H.  Fall back to the
+       macsl builtin if no such function is in scope. *)
+    let bare = String.sub fname 1 (String.length fname - 1) in
+    let li =
+      match Logic_env.find_all_logic_functions bare with
+      | li :: _ -> li
+      | [] -> List.hd (Logic_env.find_all_logic_functions fname)
+    in
+    let rt = match li.l_type with Some t -> t | None -> Linteger in
+    Logic_const.term (Tapp (li, [], terms)) rt
   | PLapp (app_name, _, [ { lexpr_node = PLvar arg } ])
     when List.mem app_name kw_terms ->
     (match List.assoc_opt app_name termassoc with
@@ -217,10 +278,12 @@ let process_property tc loc = function
       | PLvar "\\total" -> Total
       | PLvar "\\guarded_by" -> Guarded_by
       | PLvar "\\stable_check" -> Stable_check
+      | PLvar "\\authorized" -> Authorized
+      | PLvar "\\tamper_evident" -> Tamper_evident
       | _ -> tc.error econtext.lexpr_loc
                "macsl supports \\context(\\writing | \\reading | \\postcond | \
                 \\precond | \\noninterference | \\total | \\guarded_by | \
-                \\stable_check)"
+                \\stable_check | \\authorized | \\tamper_evident)"
     in
     let p_property, p_secret = match p_context with
       | Noninterference ->
@@ -547,14 +610,14 @@ let run_policy pol =
   (* the body-walking contexts need a definition; the contract/synthesis
      contexts accept declaration-only targets (they use the contract). *)
   let kfs = match pol.p_context with
-    | Writing | Reading | Total | Guarded_by | Stable_check ->
+    | Writing | Reading | Total | Guarded_by | Stable_check | Authorized ->
       List.filter
         (fun kf ->
            if Kernel_function.has_definition kf then true
            else (Self.warning "target %a has no definition; skipped"
                    Kernel_function.pretty kf; false))
         kfs
-    | Postcond | Precond | Noninterference -> kfs
+    | Postcond | Precond | Noninterference | Tamper_evident -> kfs
   in
   let n =
     match pol.p_context with
@@ -570,6 +633,17 @@ let run_policy pol =
     | Guarded_by | Stable_check ->
       let v = new writing_visitor pol in
       visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
+    (* WS3 (M-3): the principal-identity obligation is injected at every write
+       site of the protected operation, reusing the H-T walk — exactly like
+       \guarded_by, but the predicate is `authorized(current_principal, OP)`. *)
+    | Authorized ->
+      let v = new writing_visitor pol in
+      visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
+    (* WS4 (M-4): the hash-chain obligation is a checked postcondition (the
+       chaining discipline), reusing the H-R emit_ensures path. *)
+    | Tamper_evident ->
+      List.fold_left (fun acc kf -> if emit_ensures pol kf then acc + 1 else acc)
+        0 kfs
     | Postcond ->
       List.fold_left (fun acc kf -> if emit_ensures pol kf then acc + 1 else acc)
         0 kfs
@@ -591,7 +665,9 @@ let run_policy pol =
     | Noninterference -> "target function", "noninterference"
     | Total    -> "target function", "total"
     | Guarded_by -> "guarded write site", "guarded_by"
-    | Stable_check -> "check-then-act site", "stable_check" in
+    | Stable_check -> "check-then-act site", "stable_check"
+    | Authorized -> "protected operation site", "authorized"
+    | Tamper_evident -> "target function", "tamper_evident" in
   if n = 0 then
     Self.warning ~wkey:zero_wkey
       "policy %s expanded to 0 obligations (matched no %s)" pol.p_name descr;
