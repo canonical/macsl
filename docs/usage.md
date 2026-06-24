@@ -276,6 +276,117 @@ the WS1 analog of `verify_token`: the rely-guarantee discharge of that assumptio
 > boundary**, supplied as a hypothesis if ever needed — **never** an axiom macsl smuggles. This is H-R
 > hardening, **not** a quantitative mechanism, so it does **not** grow the `axiom-wp` hardened set.
 
+## Bounded work (WS6, M-6)
+
+- **`\context(\fuel)`** (WS6) injects a **ghost step counter** (`__macsl_fuel`) into the target body,
+  `++`'d at each **loop back-edge** and **call site**, and emits the policy bound — conventionally
+  `\fuel <= N` — as a **checked postcondition**. `\fuel` is a per-site **meta-term** that resolves to the
+  injected counter, so the bound is an ordinary inequality over a real ghost variable. On each
+  instrumented loop macsl **auto-frames** the counter (it adds `__macsl_fuel` to the loop's `assigns` and
+  a `0 <= __macsl_fuel` invariant) so your existing loop annotations stay valid.
+
+  ```c
+  int helper(int x);
+  /*@ happy \prop, \name("fuelbound"), \targets({bounded_work}),
+        \context(\fuel), \fuel <= 4;
+  */
+  int bounded_work(int n) {
+    int a = helper(n);  /* step 1 */
+    int b = helper(a);  /* step 2 */
+    int c = helper(b);  /* step 3 -> __macsl_fuel == 3 <= 4 -> green */
+    return c;
+  }
+  ```
+  This is the **quantitative iteration bound** the shipped `\total` deliberately omits: not just "it
+  terminates", but "it does at most N steps of work". A terminating-but-input-superlinear path
+  (`algorithmic_dos`: `n*n` call steps under a linear `\fuel <= 100`) leaves the counter unbounded → the
+  closing VC is **red** — the verified form of an algorithmic-complexity DoS. See
+  `tests/phase9/fuel_{pos,neg}.c`. `\cost(ranking)` (a supplied ranking) and `\resource(budget)`
+  (alloc/recursion/handle pools) are the two **projections** of this spine (see the vocabulary table
+  below); the shipped `\fuel` is their common counter.
+
+> **Bound / scope.** `\fuel` is a **ground per-site counter** — **no new logic symbol, no ranking lemma,
+> no axiom** (it does **not** grow the `axiom-wp` hardened set). A `\fuel` bound on a **loop** is provable
+> green only when the loop carries an invariant tying iterations to the counter; because `__macsl_fuel` is
+> macsl-injected (not nameable in a hand-written loop invariant this pass), the green positive is
+> demonstrated on **straight-line/bounded** work, and a loop is the **honest red** when it cannot meet a
+> linear budget.
+
+## Lattice flow (WS7, M-7)
+
+- **`\context(\flow)`** (WS7) walks the target's **write sites** (the H-T walk, like `\authorized`) and
+  injects, at each one, the policy's **flow predicate** over a **user-declared** security lattice —
+  conventionally a no-flow-up / ownership statement using the user's partial order `\leq` and labelling
+  `\label(...)`. This **folds vertical EoP** (no write-up) **and horizontal RBAC** (no cross-owner write)
+  into **one** property over the lattice.
+
+  ```c
+  int caller_data, tenantA;
+  /*@ axiomatic Lattice {
+        predicate leq(integer a, integer b);
+        logic integer label(int *p);
+        axiom refl:  \forall integer a; leq(a, a);
+        axiom asym:  \forall integer a, b; leq(a,b) && leq(b,a) ==> a == b;
+        axiom trans: \forall integer a, b, c; leq(a,b) && leq(b,c) ==> leq(a,c);
+      } */
+  /*@ assigns caller_data; ensures leq(label(&caller_data), label(&tenantA)); */
+  void reclassify(void);                       // trusted relabel/declassify gate
+
+  /*@ happy \prop, \name("noflowup"), \targets({legit_write}),
+        \context(\flow), \leq(\label(&caller_data), \label(\lhost_written));
+  */
+  ```
+  `\leq` resolves to the user's `leq` and `\label` to the user's `label` (the same-named-symbol
+  discipline as `\hash`). A write that crosses an ownership boundary (flows up) with no `reclassify` on
+  the path leaves the flow predicate **red, in the function that crossed the boundary** — this is the
+  property that retires the **FE2-style per-pair horizontal-RBAC workaround** (one lattice obligation
+  replaces the bespoke check). See `tests/phase10/flow_{pos,neg}.c` (the negative is `cross_tenant`).
+
+> **Bound (no smuggled axiom).** `\leq` / `\label` stay **UNINTERPRETED** — macsl emits **zero** axioms
+> about them. The lattice **order axioms** (refl/antisym/trans) are the **user's own structural
+> `axiomatic`** (definitional, satisfied by any partial order, like H-E's integer encoding); the **label
+> values** come from the trusted relabel boundary (`reclassify`'s `ensures leq(...)`), the lattice analog
+> of `authenticate()`'s `ensures authorized(...)`. macsl proves only the flow discipline. **No
+> `axiom-wp` growth.**
+
+## Cost-channel NI (WS5, M-5)
+
+- **`\context(\noninterference(\cost))`** (WS5) is the **relational timing variant** of H-I2. macsl
+  extends the self-composition twin with a **ghost step counter** (`__macsl_cost`, the same `\fuel` cost
+  model) and asserts the count is **secret-independent** across the two runs. Tail: `\secret(param, ...)`
+  (the secret split) and an optional `\declassify(value, ...)` (audited release points).
+
+  ```c
+  /*@ ghost int __macsl_cost; */               // the cost channel (the twin reads this)
+  /*@ assigns __macsl_cost;
+      ensures __macsl_cost == \old(__macsl_cost) + 2; */   // cost contract (public-only)
+  int cmp(int attempt, int stored);
+
+  /*@ happy \prop, \name("ct_cost"), \targets({cmp}),
+        \context(\noninterference(\cost)), \secret(stored);
+  */
+  ```
+  macsl synthesizes `cmp__costcomp`, which runs `cmp` twice (public `attempt` shared, secret `stored`
+  split a/b), resets/snapshots `__macsl_cost` around each call into `ca`/`cb`, and asserts `ca == cb`.
+  Where plain `\noninterference` checks the **result** is secret-independent, this checks the **work**
+  (branch/step count) is. A `timing_oracle` — constant **result** but secret-dependent **branch count**
+  (an early-return compare) — leaves `ca == cb` **red**; the constant-work form is **green**. See
+  `tests/phase11/cost_{pos,neg}.c`.
+
+- **`\declassify(v, ...)`** names **audited release points** — a deliberate release **on record** (a
+  feedback audit note, never silent). See `tests/phase11/cost_declassify.c`.
+
+> **Bound (GH3) + honest PARTIAL.** The cost observable is **modelled steps**, not wall-clock / cache /
+> µarch. The counter is a **ground ghost variable** and the relation a plain equality over it — **no
+> ranking lemma, no axiom** (it does **not** grow the `axiom-wp` hardened set). The cost **value** is the
+> target's cost contract (the fixture's `ensures __macsl_cost == …`, in terms of public state), the WS4
+> split where `\hash`'s value is the trusted contract's. **Stateful (store-duplication) NI is a
+> documented PARTIAL** (not implemented this pass): the shipped mechanism is the **cost channel** +
+> `\declassify`, reasoning modularly through the contract — do **not** read its green as full stateful
+> noninterference. `\declassify` in the cost channel is the *audit record* of an intended release (the
+> obligation is over the **aggregate** step count); a per-value structural exemption is the value-channel
+> form (future). See `docs/ws-mechanisms.md` M-5.
+
 ## Resource vocabulary (decision — Issue 4, settled)
 
 `\fuel` is the **canonical step-budget spine**; `\cost` and `\resource` are its two **projections**, and
@@ -288,8 +399,11 @@ the WS1 analog of `verify_token`: the rely-guarantee discharge of that assumptio
 | **`\resource`** | allocations / recursion depth / handle counts **vs an explicit budget** | the *resource-pool* projection of `\fuel` |
 | **`\noninterference(\cost)`** | equal public inputs ⇒ equal step count (a timing-channel 2-safety obligation) | the *relational timing* variant |
 
-**Not implemented** (WS6 / Phase C — see `happy-roadmap.md` §4 and `ws-mechanisms.md` M-5/M-6); this
-table only fixes the vocabulary so `usage.md` and `happy-roadmap.md` agree.
+**Status:** `\fuel` (the spine) and `\noninterference(\cost)` (the relational timing variant) are
+**IMPLEMENTED** (Phase C / WS6, WS5 — see "Bounded work (WS6)" and "Cost-channel NI (WS5)" above). The
+two projections `\cost(ranking)` and `\resource(budget)` reuse the same ground ghost counter and remain
+the named refinements (`ws-mechanisms.md` M-6). This table fixes the vocabulary so `usage.md` and
+`happy-roadmap.md` agree.
 
 ## Options
 
@@ -318,10 +432,12 @@ misdiagnosis (see [design.md](design.md)).
 
 - Contexts implemented: `\writing` (H-T), `\reading` (H-I1), `\postcond` (H-R/H-E), `\precond` (H-S),
   `\noninterference` (H-I2), `\total` (H-D), `\guarded_by` / `\stable_check` (WS1 stage 1, see
-  "Concurrency" above), `\authorized` (WS3 / M-3, see "Principal identity"), and `\tamper_evident`
-  (WS4 / M-4, see "Tamper-evident log"). `\calling`/invariants and the `\fguard`/`\tguard` guards are on
-  the roadmap (`happy-roadmap.md`); `\fuel`/`\cost`/`\resource` are vocabulary-only (WS6, see above);
-  `\noninterference(\cost)` (M-5), `\flows_to` (M-7) remain design stubs (`ws-mechanisms.md`).
+  "Concurrency" above), `\authorized` (WS3 / M-3, see "Principal identity"), `\tamper_evident`
+  (WS4 / M-4, see "Tamper-evident log"), `\fuel` (WS6 / M-6, see "Bounded work"), `\flow` (WS7 / M-7, see
+  "Lattice flow"), and `\noninterference(\cost)` + `\declassify` (WS5 / M-5, see "Cost-channel NI" — with
+  **stateful store-duplication NI an honest documented PARTIAL**). `\calling`/invariants and the
+  `\fguard`/`\tguard` guards are on the roadmap (`happy-roadmap.md`); `\cost(ranking)` / `\resource(budget)`
+  are the named projections of the shipped `\fuel` spine (`ws-mechanisms.md` M-6).
 - **Read sites** = lvalues occurring inside expressions (rvalues, conditions, call args, return,
   and offset indices). A read of `R` through the *index* of a write target — e.g. `a[secret_i] = 0` —
   is covered (the index `i` is an expression); but address-taken reads (`&R`) are deliberately not
