@@ -1,4 +1,5 @@
-/* H-R append-only (immutability) negative control: `rewrite` overwrites an
+/* ATT&CK: T1565.001 Stored Data Manipulation
+   H-R append-only (immutability) negative control: `rewrite` overwrites an
    EXISTING log entry (logbuf[0]) — rewriting history. The append-only
    postcondition must be unprovable (red). */
 

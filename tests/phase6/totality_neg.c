@@ -1,4 +1,5 @@
-/* H-D negative control: the confused parser (the teeth for totality). A crafted
+/* ATT&CK: T1499.004 Endpoint DoS: Application or System Exploitation
+   H-D negative control: the confused parser (the teeth for totality). A crafted
    `len` drives a loop that only advances on odd `i`, so on even `i` it makes no
    progress and the loop variant `len - i` cannot be shown to strictly decrease ->
    the `\context(\total)` termination goal is RED. The verified form of "a

@@ -229,5 +229,56 @@ check "audit/saturation-failclosed" 'Proved goals: +13 / 13' \
 check "token/lifecycle-live" 'Proved goals: +8 / 8' \
   frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/small_example/token_lifecycle.c
 
+echo "== Phase-7 cases (WS1 stage 1: \\guarded_by lock-held + \\stable_check) =="
+# These prove ONLY lock-held-at-access (resp. guard-stable-marker), NOT
+# check-then-act atomicity. A green \guarded_by suite is NOT "races handled":
+# the race-family crosswalk cell stays TRUSTED until WS1 stage-2. See
+# docs/usage.md "Concurrency (WS1 stage 1)".
+#
+# `held` / `stable` are UNINTERPRETED logic predicates (the macsl \held/\stable
+# markers). Each pair is provable WITH the lock/snapshot that establishes the
+# obligation and red WITHOUT it.
+
+# 35. \guarded_by instruments at the guarded write site (non-vacuity, part 1).
+check "race/guarded-print" 'assert macsl: session_guard: meta: held' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase7/race_session_pos.c
+
+# 36-38. \guarded_by POSITIVE controls: the lock is acquired before the write,
+#        so the injected held(lock) holds -> all green.
+check "race/session-pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase7/race_session_pos.c
+check "race/audit-pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase7/race_audit_pos.c
+check "race/priv-pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase7/race_priv_pos.c
+
+# 39-41. \guarded_by NEGATIVE controls: the shared write happens WITHOUT the
+#        lock -> held(lock) is unprovable at the site -> red (the teeth).
+check "race/session-neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase7/race_session_neg.c
+check "race/audit-neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase7/race_audit_neg.c
+check "race/priv-neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase7/race_priv_neg.c
+
+# 42. The obligation is LOAD-BEARING: strip the policy (no -macsl) and the SAME
+#     negative fixture proves vacuously -> the red comes from macsl, not the C.
+check "race/neg-vacuous-without-obligation" 'No goal generated|Proved goals: +2 / 2' \
+  frama-c "${BASE[@]}" "${WP[@]}" tests/phase7/race_session_neg.c
+
+# 43-45. \stable_check: the marker that an interleaving argument is OWED.
+check "stable/print" 'assert macsl: guard_stable: meta: stable' \
+  frama-c "${BASE[@]}" -macsl -print tests/phase7/stable_check_pos.c
+check "stable/pos" 'Proved goals: +3 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase7/stable_check_pos.c
+check "stable/neg-catches" 'Proved goals: +2 / 3' \
+  frama-c "${BASE[@]}" "${WP[@]}" -macsl tests/phase7/stable_check_neg.c
+
+# 46. Non-vacuity gate: -macsl-warn-key zero-expansion=abort must NOT trip on a
+#     guarded control (it really expanded over a site).
+check "race/non-vacuity-zero-abort" 'assert macsl: priv_guard' \
+  frama-c "${BASE[@]}" -macsl -macsl-warn-key zero-expansion=abort -print \
+    tests/phase7/race_priv_pos.c
+
 echo "== $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]

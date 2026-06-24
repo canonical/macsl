@@ -54,7 +54,16 @@ let () = Self.set_warn_status zero_wkey Log.Wactive
 (* HAPPY policy representation                                          *)
 (* ------------------------------------------------------------------ *)
 
-type context = Writing | Reading | Postcond | Precond | Noninterference | Total
+type context =
+  | Writing | Reading | Postcond | Precond | Noninterference | Total
+  (* WS1 stage 1 — concurrency. [Guarded_by] walks the target's write sites and
+     injects, at each one, the *checked* assertion `\held(L)` (lock L is held at
+     the access).  [Stable_check] does the same with `\stable(G)` (the shared
+     guard G value is stable to the act).  Both \held / \stable are
+     UNINTERPRETED logic predicates — no behavioural axiom is smuggled; the
+     obligation is exactly lock-held-at-access (resp. guard-stable-marker),
+     nothing stronger.  See docs/usage.md "Concurrency (WS1 stage 1)". *)
+  | Guarded_by | Stable_check
 
 type target = TgAll | TgSet of string list | TgDiff of target * target
 
@@ -85,7 +94,14 @@ let gathered : policy list ref = ref []
 let kw_preds = [ "\\prop"; "\\writing"; "\\reading"; "\\calling";
                  "\\postcond"; "\\precond"; "\\noninterference";
                  "\\secret"; "\\public"; "\\declassify";
-                 "\\weak_invariant"; "\\strong_invariant" ]
+                 "\\weak_invariant"; "\\strong_invariant";
+                 (* WS1 stage 1 concurrency markers — UNINTERPRETED predicates.
+                    `\held(L)`  : lock L is held in the current state.
+                    `\stable(G)`: shared guard value G is stable to the act.
+                    Declared with no profile (the typer resolves them via the
+                    kw_preds path in meta_type_predicate), so they carry NO
+                    behavioural axiom — exactly the no-smuggled-axiom contract. *)
+                 "\\held"; "\\stable" ]
 let kw_terms = [ "\\written"; "\\lhost_written"; "\\read"; "\\called" ]
 
 let register_builtins () =
@@ -199,9 +215,12 @@ let process_property tc loc = function
       | PLvar "\\precond"  -> Precond
       | PLvar "\\noninterference" -> Noninterference
       | PLvar "\\total" -> Total
+      | PLvar "\\guarded_by" -> Guarded_by
+      | PLvar "\\stable_check" -> Stable_check
       | _ -> tc.error econtext.lexpr_loc
                "macsl supports \\context(\\writing | \\reading | \\postcond | \
-                \\precond | \\noninterference | \\total)"
+                \\precond | \\noninterference | \\total | \\guarded_by | \
+                \\stable_check)"
     in
     let p_property, p_secret = match p_context with
       | Noninterference ->
@@ -528,7 +547,7 @@ let run_policy pol =
   (* the body-walking contexts need a definition; the contract/synthesis
      contexts accept declaration-only targets (they use the contract). *)
   let kfs = match pol.p_context with
-    | Writing | Reading | Total ->
+    | Writing | Reading | Total | Guarded_by | Stable_check ->
       List.filter
         (fun kf ->
            if Kernel_function.has_definition kf then true
@@ -544,6 +563,12 @@ let run_policy pol =
       visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
     | Reading ->
       let v = new reading_visitor pol in
+      visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
+    (* WS1 stage 1: both concurrency contexts inject their (uninterpreted)
+       obligation at every write site of the target, reusing the H-T walk.
+       \guarded_by carries `\held(L)`; \stable_check carries `\stable(G)`. *)
+    | Guarded_by | Stable_check ->
+      let v = new writing_visitor pol in
       visit_all (v :> Visitor.frama_c_visitor) kfs; v#get_count
     | Postcond ->
       List.fold_left (fun acc kf -> if emit_ensures pol kf then acc + 1 else acc)
@@ -564,7 +589,9 @@ let run_policy pol =
     | Postcond -> "target function", "postcond"
     | Precond  -> "target function", "precond"
     | Noninterference -> "target function", "noninterference"
-    | Total    -> "target function", "total" in
+    | Total    -> "target function", "total"
+    | Guarded_by -> "guarded write site", "guarded_by"
+    | Stable_check -> "check-then-act site", "stable_check" in
   if n = 0 then
     Self.warning ~wkey:zero_wkey
       "policy %s expanded to 0 obligations (matched no %s)" pol.p_name descr;

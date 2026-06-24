@@ -1,4 +1,5 @@
-/* Negative control: `writer` writes the protected global `secret`,
+/* ATT&CK: T1565.001 Stored Data Manipulation
+   Negative control: `writer` writes the protected global `secret`,
    so the generated separation assertion MUST be red (unprovable). */
 
 int secret = 0;

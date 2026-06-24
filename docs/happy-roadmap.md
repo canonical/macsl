@@ -8,10 +8,24 @@
 shipped, prove/fail-tested property family** (H-T, H-I1, H-R, H-E, H-S, H-I2, and H-D totality —
 `tests/phase0…phase6`, run via `tests/run.sh`). What remains **pre-normative** (a design proposal, not
 yet an accepted `happy` production) is the *deferred sugar / extensions* called out per section:
-`\fuel` (H-D bounded-work), `\declassify` and stateful noninterference (H-I2), the `\audit` /
+`\fuel` (H-D bounded-work; the canonical step-budget spine — see the **Resource vocabulary** note
+below), `\declassify` and stateful noninterference (H-I2), the `\audit` /
 `\privilege` sugar (H-R/H-E), and any milestone whose directive surface has not yet landed in the
 `macsl` annotation reference with its lowering + cross-reference + non-vacuity gates. A milestone
 graduates fully to Normative only when those gates pass for its directives.
+
+> **Resource vocabulary (decision — Issue 4, settled).** `\fuel` is the **canonical step-budget
+> spine**. `\cost` and `\resource` are its two **projections**, *not* rival spines:
+> - **`\cost`** — a WP-discharged **step bound from a supplied ranking** (a declared step counter /
+>   ranking expression the closing VC proves is never exceeded). It is the quantitative reading of
+>   `\fuel` over WP-modelled loops.
+> - **`\resource`** — the same budget discipline applied to **allocations / recursion depth / handle
+>   counts** against an explicit declared budget (the "don't exhaust the pool" reading).
+> - **`\noninterference(\cost)`** — the **relational timing variant**: the `\fuel`/`\cost` budget made
+>   2-safety (equal public inputs ⇒ equal step count), i.e. a timing-channel obligation.
+>
+> This vocabulary is **not implemented** (it is WS6 / Phase C; see §4 and `ws-mechanisms.md` M-5/M-6);
+> this note only fixes the words so the roadmaps agree. `docs/usage.md` carries the same decision.
 
 **Phase numbering (load-bearing — two schemes, do not conflate):** the **test-directory** number
 (`tests/phaseN/`) is the *implementation milestone order* — phase0 = H-T, phase1 = H-I1, phase2 = H-R,
@@ -206,7 +220,10 @@ of "no uncaught exception"; integer bounds are VCs under the WP arithmetic model
 ```
 `\total f` is a hard meta-pass error unless `f` (and transitively every loop in it) carries a variant
 **and** `-wp-rte` discharges every injected RTE assert — i.e., the bundle makes "this function returns
-normally and faults on **no** input" a checked claim instead of a convention. `\fuel` injects a ghost
+normally and faults on **no** input" a checked claim instead of a convention. `\fuel` (the canonical
+step-budget spine; its **`\cost`** projection is this same WP-discharged bound stated from a supplied
+ranking, and **`\resource`** is the allocation/recursion-depth/handle reading — see the Resource
+vocabulary note at the top of this file) injects a ghost
 step counter incremented in each loop body, with the bound carried as an injected loop invariant; the
 closing VC proves the counter never exceeds the declared expression. **State the strength precisely**
 (EBIOS consumers will over-read it): this proves **totality + an iteration bound over the WP-modelled

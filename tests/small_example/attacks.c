@@ -38,7 +38,8 @@ void transfer(int from, int to, int amount)
 }
 
 /* ATTACK 1 — H-R completeness: moves money but never logs it
-   ("the transfer that left no trace"). */
+   ("the transfer that left no trace").
+   ATT&CK: T1070 Indicator Removal (act without producing the audit record) */
 /*@ requires 0 <= from < NACC && 0 <= to < NACC;
     assigns balance[from], balance[to]; */
 void transfer_silent(int from, int to, int amount)
@@ -53,7 +54,8 @@ void transfer_silent(int from, int to, int amount)
 */
 
 /* ATTACK 2 — H-R append-only: overwrites an existing audit record
-   (rewriting history). */
+   (rewriting history).
+   ATT&CK: T1565.001 Stored Data Manipulation (overwrite a committed log entry) */
 /*@ requires 0 < audit_len <= NLOG;
     assigns audit[0]; */
 void rewrite_audit(int v) { audit[0] = v; }
@@ -62,7 +64,8 @@ void rewrite_audit(int v) { audit[0] = v; }
       \forall integer i; 0 <= i < \old(audit_len) ==> audit[i] == \old(audit[i]);
 */
 
-/* ATTACK 3 — H-T integrity: a non-transfer function writes a balance directly. */
+/* ATTACK 3 — H-T integrity: a non-transfer function writes a balance directly.
+   ATT&CK: T1565.001 Stored Data Manipulation (tamper protected state out-of-band) */
 /*@ requires 0 <= i < NACC;
     assigns balance[i]; */
 void tamper(int i, int v) { balance[i] = v; }
@@ -71,7 +74,8 @@ void tamper(int i, int v) { balance[i] = v; }
       \separated(\written, balance + (0 .. NACC - 1));
 */
 
-/* ATTACK 4 — H-S: an endpoint reaching transfer without authenticating first. */
+/* ATTACK 4 — H-S: an endpoint reaching transfer without authenticating first.
+   ATT&CK: T1078 Valid Accounts / auth bypass (reach a guarded op without the check) */
 /*@ requires 0 <= from < NACC && 0 <= to < NACC;
     requires 0 <= audit_len < NLOG;
     assigns balance[from], balance[to], audit[audit_len], audit_len; */
@@ -88,7 +92,8 @@ void unauth_endpoint(int from, int to, int amount)
    from unprivileged code that LOWERS a user's role (grants super-admin), so the
    account ends with more privilege than it began. The monotonicity postcondition
    role[k] >= \old(role[k]) goes red at this function. (Compliant counterpart: the
-   priv_monotonic policy on main.c's transfer, which never raises a role.) */
+   priv_monotonic policy on main.c's transfer, which never raises a role.)
+   ATT&CK: T1068 Exploitation for Privilege Escalation (confused-deputy role raise) */
 /*@ requires 0 <= i < NACC;
     requires role[i] >= 1;            // currently below super-admin
     assigns role[i]; */
@@ -100,7 +105,8 @@ void escalate(int i) { role[i] = 0; }    /* confused deputy: grant super-admin *
 
 /* ATTACK 6 — H-I1 read confinement: a function that READS a confidential PIN
    into a public sink (the classic exfiltration). The read-separation check at
-   `pin[i]` is unprovable -> red. */
+   `pin[i]` is unprovable -> red.
+   ATT&CK: T1005 Data from Local System (read confidential state into a sink) */
 /*@ requires 0 <= i < NACC; assigns leak_sink; */
 void leak_pin(int i) { leak_sink = pin[i]; }   /* reads a secret -> read-check red */
 /*@ happy \prop, \name("pin_confidential"),
@@ -111,7 +117,8 @@ void leak_pin(int i) { leak_sink = pin[i]; }   /* reads a secret -> read-check r
 /* ATTACK 7 — H-I2 noninterference: `check`'s public result DEPENDS on the secret
    `stored` (returns attempt + stored). The synthesized self-composition's
    relational assert (equal public input, distinct secret -> equal result) is
-   unprovable -> red. The verified form of the classic password-oracle leak. */
+   unprovable -> red. The verified form of the classic password-oracle leak.
+   ATT&CK: T1040 / oracle side-leak (public result depends on a secret) */
 /*@ assigns \nothing; ensures \result == attempt + stored; */
 int check(int attempt, int stored);
 /*@ happy \prop, \name("noleak"),
@@ -122,7 +129,8 @@ int check(int attempt, int stored);
 /* ATTACK 8 — H-D denial of service (the confused parser): a crafted `len` drives
    a loop that fails to make progress on some inputs (it only advances on odd i),
    so the loop variant cannot be shown to strictly decrease -> the termination
-   goal is red. The verified form of "a malformed length field hangs the parser." */
+   goal is red. The verified form of "a malformed length field hangs the parser."
+   ATT&CK: T1499.004 Endpoint DoS: Application or System Exploitation (non-terminating loop) */
 /*@ requires len >= 0; assigns \nothing; */
 void parse_request(int len)
 {
@@ -142,7 +150,8 @@ void parse_request(int len)
    a FOREIGN account (from != caller_acct). The rbac_own_account postcondition
    (a role-2 caller decreases no account but its own) goes red. The verified form of
    "a User moved money out of someone else's account." Compliant counterpart:
-   rbac_horizontal.c's guarded transfer. */
+   rbac_horizontal.c's guarded transfer.
+   ATT&CK: T1078 Valid Accounts (horizontal broken-access-control / IDOR) */
 /*@ requires 0 <= caller_acct < NACC && 0 <= from < NACC && 0 <= to < NACC;
     requires 0 <= audit_len < NLOG;
     requires amount > 0;
@@ -169,7 +178,8 @@ int transfer_cross(int from, int to, int amount)
    written -> the nonrepud_atcap postcondition (a balance change implies the log
    grew, even at capacity) goes red. The verified form of "the bank kept
    transacting after its ledger filled up." Compliant counterpart:
-   audit_saturation.c's fail-closed transfer. */
+   audit_saturation.c's fail-closed transfer.
+   ATT&CK: T1070 Indicator Removal (audit saturation -> action goes unlogged) */
 /*@ requires 0 <= audit_len <= NLOG;
     assigns audit[0 .. NLOG - 1], audit_len;
     behavior room:
@@ -207,7 +217,9 @@ int transfer_unlogged_atcap(int from, int to, int amount)
    still valid -- it acts on a once-issued (now possibly revoked or expired) token.
    The token_live precond (token_active == 1 at the call site) goes red. The
    verified form of "a stale session token still moved money." Compliant
-   counterpart: token_lifecycle.c's liveness-checked handler. */
+   counterpart: token_lifecycle.c's liveness-checked handler.
+   ATT&CK: T1550.004 Use Alternate Authentication Material: Web Session Cookie
+           (replay of a revoked/expired token) */
 /*@ requires 0 <= from < NACC && 0 <= to < NACC;
     assigns balance[from], balance[to]; */
 void protected_op(int from, int to, int amount) { balance[from] -= amount; balance[to] += amount; }

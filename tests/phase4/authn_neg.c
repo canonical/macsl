@@ -1,4 +1,5 @@
-/* H-S negative control: the forgotten-check bug. A maintenance endpoint calls
+/* ATT&CK: T1078 Valid Accounts
+   H-S negative control: the forgotten-check bug. A maintenance endpoint calls
    the guarded op `sys_write` directly, without verifying the token first. The
    injected capability precondition (session_ok == 1) is unprovable at that
    call site -> red, in the caller that took the shortcut. */

@@ -1,4 +1,5 @@
-/* H-I1 negative control: `leak` READS the confidential global `secret`,
+/* ATT&CK: T1005 Data from Local System
+   H-I1 negative control: `leak` READS the confidential global `secret`,
    so the generated read-separation assertion MUST be red (unprovable). */
 
 int secret = 0;   /* the confidential region */

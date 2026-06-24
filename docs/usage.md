@@ -51,7 +51,8 @@ A HAPPY policy is a global ACSL annotation introduced by the `happy` keyword:
 /*@ happy \prop,
       \name(<string>),          // names the generated assertions
       \targets(<TS>),           // \ALL  |  {f, g, ...}
-      \context(<C>),            // \writing (H-T) | \reading (H-I1)
+      \context(<C>),            // \writing | \reading | \postcond | \precond
+                                //   | \noninterference | \total | \guarded_by | \stable_check
       P ;                       // an ACSL predicate; may mention the context meta-variable
 */
 ```
@@ -169,6 +170,63 @@ the secret (`ensures \result == attempt + stored`) makes the relational assert *
 > (`happy-roadmap.md`), which needs self-composition; conflating the two would be a
 > "coherent-and-wrong" claim.
 
+## Concurrency (WS1 stage 1)
+
+Two contexts begin to address GH4 (concurrency). They are **stage 1**: they establish a *local*
+obligation at each shared access, **not** a full interleaving (rely-guarantee) argument. Read the bound
+below before trusting any green result.
+
+- **`\context(\guarded_by)`** (WS1) walks the target's **write sites** (the H-T walk) and injects, at
+  each one, the *checked* assertion that a lock is held. You supply the obligation as the policy
+  predicate, conventionally `\held(L)` (the macsl uninterpreted lock marker) or any user predicate
+  `held(L)`:
+
+  ```c
+  //@ ghost int session_lock = 0;
+  /*@ axiomatic Lock { predicate held(integer l) reads l; } */
+  /*@ assigns session_lock; ensures held(session_lock); */   // trusted lock primitive
+  void acquire_session(void);
+
+  /*@ happy \prop, \name("session_guard"), \targets({touch_session}),
+        \context(\guarded_by), held(session_lock);
+  */
+  ```
+  WP must prove `held(session_lock)` at each write to the guarded state. A path that mutates the state
+  without first acquiring the lock leaves the obligation **red, in the function that took the shortcut**
+  — exactly like H-S. See `tests/phase7/race_session_{pos,neg}.c` (and `race_audit`, `race_priv`).
+
+- **`\context(\stable_check)`** marks a check-then-act whose guard reads shared state: it injects, at
+  the act's write site, the obligation that the guard value is **stable** to the act (conventionally
+  `\stable(G)` / a user predicate `stable(G)`). This is the **marker that a real interleaving argument
+  is OWED** — stage 1 does **not** discharge atomicity. See `tests/phase7/stable_check_{pos,neg}.c`.
+
+`\held` and `\stable` are **uninterpreted** logic predicates — macsl declares them with no profile and
+**no behavioural axiom** (the no-smuggled-axiom gate). The *establishing* hypothesis (a lock primitive
+`ensures held(L)`, a snapshot primitive `ensures stable(G)`) is a **trusted declaration-only contract**,
+the WS1 analog of `verify_token`: the rely-guarantee discharge of that assumption is **stage 2**.
+
+> **CRITICAL bound — do not over-read a green `\guarded_by` suite.** Stage 1 establishes
+> **lock-held-at-access ONLY**. It does **NOT** establish check-then-act **atomicity**, freedom from
+> data races, or any interleaving property. A fully-green `\guarded_by` run is **not** "races handled":
+> it says every guarded write is syntactically under its lock, nothing more. Consequently the
+> **race-family crosswalk cell stays TRUSTED (never PROVED)** until **WS1 stage 2 (rely-guarantee)**
+> lands. Treating a stage-1 green as race-safety is precisely the coherent-and-wrong this bound guards.
+
+## Resource vocabulary (decision — Issue 4, settled)
+
+`\fuel` is the **canonical step-budget spine**; `\cost` and `\resource` are its two **projections**, and
+`\noninterference(\cost)` is the relational timing variant:
+
+| Term | Meaning | Relation to `\fuel` |
+|---|---|---|
+| **`\fuel`** | step budget over WP-modelled loops (H-D bounded-work) | the spine |
+| **`\cost`** | a **WP-discharged step bound from a supplied ranking** (declared ranking expression; closing VC proves it is never exceeded) | the *quantitative* projection of `\fuel` |
+| **`\resource`** | allocations / recursion depth / handle counts **vs an explicit budget** | the *resource-pool* projection of `\fuel` |
+| **`\noninterference(\cost)`** | equal public inputs ⇒ equal step count (a timing-channel 2-safety obligation) | the *relational timing* variant |
+
+**Not implemented** (WS6 / Phase C — see `happy-roadmap.md` §4 and `ws-mechanisms.md` M-5/M-6); this
+table only fixes the vocabulary so `usage.md` and `happy-roadmap.md` agree.
+
 ## Options
 
 | Option | Effect |
@@ -194,8 +252,10 @@ misdiagnosis (see [design.md](design.md)).
 
 ## Limitations (Phases 0–1)
 
-- Contexts implemented: `\writing` (H-T) and `\reading` (H-I1). `\calling`/invariants and the
-  `\fguard`/`\tguard` guards are on the roadmap (`happy-roadmap.md`).
+- Contexts implemented: `\writing` (H-T), `\reading` (H-I1), `\postcond` (H-R/H-E), `\precond` (H-S),
+  `\noninterference` (H-I2), `\total` (H-D), and `\guarded_by` / `\stable_check` (WS1 stage 1, see
+  "Concurrency" above). `\calling`/invariants and the `\fguard`/`\tguard` guards are on the roadmap
+  (`happy-roadmap.md`); `\fuel`/`\cost`/`\resource` are vocabulary-only (WS6, see above).
 - **Read sites** = lvalues occurring inside expressions (rvalues, conditions, call args, return,
   and offset indices). A read of `R` through the *index* of a write target — e.g. `a[secret_i] = 0` —
   is covered (the index `i` is an expression); but address-taken reads (`&R`) are deliberately not

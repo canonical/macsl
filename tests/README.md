@@ -7,7 +7,8 @@ eval $(opam env --switch=framac-coq8)
 ./tests/run.sh
 ```
 
-Expected: `34 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E + 3 H-S + 3 H-I2 + 2 H-D + 9 worked-example).
+Expected: `46 passed, 0 failed` (6 H-T + 3 H-I1 + 5 H-R + 3 H-E + 3 H-S + 3 H-I2 + 2 H-D + 9
+worked-example + 12 WS1 stage-1 concurrency `\guarded_by`/`\stable_check`).
 
 ## STRIDE coverage status (authoritative map — read this first)
 
@@ -23,10 +24,17 @@ of truth for "what is done"; if a letter is missing or unmarked here, that is a 
 | **I** Information disclosure | H-I1 / H-I2 | read confinement / noninterference | `\reading` / `\noninterference` | `phase1/`, `phase5/` | 7–9, 21–23 | shipped (H-I2 scoped: params only) |
 | **D** Denial of service | H-D | totality + no-fault | `\total` (+ `-wp-rte`) | `phase6/` | 33–34 (+28–29) | shipped; flagship parser partial, `\fuel` TODO |
 | **E** Elevation of privilege | H-E | privilege monotonicity | `\postcond` + `\diff` | `phase3/` | 15–17 | shipped |
+| *(cross-cutting)* GH4 race | WS1 | lock-held-at-access / guard-stable marker | `\guarded_by` / `\stable_check` | `phase7/` | 35–46 | **stage 1 only** |
 
 Caveats are honest scope, not omissions — see `../docs/happy-roadmap.md` §4 (H-D), §7 (H-I2), §9 (gaps
-GH1–GH6). Test-dir numbering = implementation milestone order (phase0=T … **phase6=D**); it is a
-different axis from the roadmap §0 "macsl phase" column (see the roadmap's *Phase numbering* note).
+GH1–GH6). Test-dir numbering = implementation milestone order (phase0=T … **phase6=D**, **phase7=WS1
+concurrency stage 1**); it is a different axis from the roadmap §0 "macsl phase" column (see the
+roadmap's *Phase numbering* note).
+
+> **WS1 stage 1 is NOT race-safety.** `\guarded_by` proves lock-held-at-access ONLY; `\stable_check`
+> only *marks* that a check-then-act interleaving argument is OWED. A green phase7 suite must NOT be
+> read as "races handled" — the race-family crosswalk cell stays TRUSTED until WS1 stage-2
+> (rely-guarantee). See `../docs/usage.md` "Concurrency (WS1 stage 1)".
 
 ## Why a shell runner and not ptests?
 
@@ -82,6 +90,23 @@ which clashes depending on load order. `run.sh` sidesteps that by running with
 |---|---|---|
 | `totality_pos.c` | `\context(\total)` on an always-advancing parser | terminates + no-fault, all proved (`9/9`) |
 | `totality_neg.c` | same; confused parser advances only on odd `i` | `…_loop_variant_decrease` unproved (`8/9`) — the **negative control** |
+
+### `phase7/` — WS1 stage 1 concurrency (`\guarded_by` / `\stable_check`)
+Stage-1 obligation is **lock-held-at-access** (resp. guard-stable-marker) ONLY — NOT atomicity. `held` /
+`stable` are uninterpreted; the establishing lock/snapshot primitive is a trusted declaration-only
+contract (the WS1 analog of `verify_token`).
+
+| File | Policy | Expected |
+|---|---|---|
+| `race_session_pos.c` | `\guarded_by`, `held(session_lock)`; writer acquires the lock first | all proved (`3/3`) |
+| `race_session_neg.c` | same; fast path writes without acquiring (H-S race) | `held(session_lock)` unproved (`2/3`) — **negative control** |
+| `race_audit_pos.c` / `race_audit_neg.c` | `\guarded_by`, `held(audit_lock)` (H-R lost-update race) | `3/3` / `2/3` |
+| `race_priv_pos.c` / `race_priv_neg.c` | `\guarded_by`, `held(priv_lock)` (H-E TOCTOU priv flip) | `3/3` / `2/3` |
+| `stable_check_pos.c` | `\stable_check`, `stable(g)`; act under a snapshot | `3/3` |
+| `stable_check_neg.c` | same; bare check-then-act, no snapshot | `stable(g)` unproved (`2/3`) — **negative control** |
+
+The obligation is **load-bearing**: drop `-macsl` and each `_neg` fixture proves vacuously (run.sh case
+`race/neg-vacuous-without-obligation`). All `_neg` fixtures carry a greppable `ATT&CK:` tag (M-8).
 
 ### `small_example/` — worked example (all seven HAPPY families, six STRIDE letters, on one system)
 | File | Role | Expected |

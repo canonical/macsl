@@ -1,4 +1,5 @@
-/* H-R negative control: sys_unlink changes the protected state `disk` but
+/* ATT&CK: T1070 Indicator Removal
+   H-R negative control: sys_unlink changes the protected state `disk` but
    FORGETS to append to the audit log — "the deletion that left no trace".
    The completeness postcondition must be unprovable (red). */
 
