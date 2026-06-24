@@ -15,7 +15,20 @@ MOLEAN=".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean"
 get_cache() { echo "== lake exe cache get =="; lake exe cache get || return 1; [ -f "$MOLEAN" ]; }
 if ! get_cache; then
   echo "  cache incomplete; retrying once..."; sleep 5
-  get_cache || { echo "INFRA-MISSING: mathlib oleans unavailable after retry ($MOLEAN absent)"; exit 2; }
+  get_cache || true
+fi
+# The mathlib Azure cache can lack a handful of oleans for a *tagged* commit — including
+# the top-level `Mathlib.olean` aggregate that Cfloat.lean's `import Mathlib` needs (the
+# v4.31.0 tag fabf563 is missing ~26, surfacing as "some files were not found in the
+# cache"). `lake exe cache get` is best-effort, so FILL the gap by BUILDING the missing
+# oleans from the (already-cached) dependency closure — bounded to the few the cache
+# lacked, NOT a from-scratch mathlib build. Fail-closed as INFRA-MISSING only if even the
+# build cannot produce the aggregate (a genuine toolchain/cache infra failure, not a twin
+# failure).
+if [ ! -f "$MOLEAN" ]; then
+  echo "== cache gap: building missing oleans (lake build Mathlib) =="
+  lake build Mathlib || { echo "INFRA-MISSING: mathlib unavailable (cache gap + lake build Mathlib failed)"; exit 2; }
+  [ -f "$MOLEAN" ] || { echo "INFRA-MISSING: $MOLEAN still absent after lake build"; exit 2; }
 fi
 rc=0
 for f in RealFloat.lean Cfloat.lean; do
