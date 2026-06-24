@@ -15,7 +15,8 @@ Trusted Computing Base (TCB) by proving the Coq realization lemmas that WP relie
 ## Status
 
 HAPPY connects high-level security analysis such as
-[EBIOS RM](https://messervices.cyber.gouv.fr/guides/en-ebios-risk-manager-method) to the
+[EBIOS RM](https://messervices.cyber.gouv.fr/guides/en-ebios-risk-manager-method) or
+[Risk Management Framework](https://csrc.nist.gov/projects/risk-management/about-rmf) to the
 code.
 
 All seven HAPPY policies are supported, covering the six STRIDE families:
