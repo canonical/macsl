@@ -40,6 +40,13 @@ module List_targets = Self.False (struct
     let help = "Report, per policy, how many sites it expanded over"
   end)
 
+module List_contexts = Self.False (struct
+    let option_name = "-macsl-list-contexts"
+    let help = "Print the catalog of supported \\context(...) (token | mechanism \
+                | obligation) and stop; the machine-readable source of truth for \
+                downstream skills/tooling"
+  end)
+
 module Targets = Self.String_set (struct
     let option_name = "-macsl-set"
     let arg_name = "p,..."
@@ -1056,9 +1063,52 @@ let run (_file : Cil_types.file) =
       total
   end
 
+(* The supported \context(...) catalog — the SINGLE SOURCE OF TRUTH for which
+   HAPPY contexts exist.  Mirrors the `context` type + the run_policy dispatch;
+   downstream skills consume `-macsl-list-contexts` rather than hard-coding a list
+   that drifts.  Every obligation predicate is UNINTERPRETED (no behavioural
+   axiom).  token | mechanism | obligation. *)
+let contexts_doc = [
+  "\\writing", "H-T in-place assert at each write site",
+  "no write to the guarded state violates P (integrity / tampering)";
+  "\\reading", "H-S in-place assert at each read site",
+  "no read of the guarded state violates P (read-confinement)";
+  "\\postcond", "H-R checked ensures on the target",
+  "P holds at every return";
+  "\\precond", "H-S checked requires on the target",
+  "P holds on entry (the checker was actually called)";
+  "\\noninterference \\secret(p,...)", "H-I2 self-composition twin",
+  "a public output never depends on the secret(s) (confidentiality / info-leak)";
+  "\\noninterference(\\cost) \\secret(p,...) [\\declassify(v,...)]",
+  "WS5 self-comp + ghost step/branch counter",
+  "the step/branch count is secret-independent (constant-time / cost channel)";
+  "\\total", "H-D attaches `terminates` (WP from loop variants)",
+  "the target always returns (availability / no hang)";
+  "\\guarded_by", "WS1 write-site walk, injects \\held(L)",
+  "every write site holds lock L (concurrency / data-race)";
+  "\\stable_check", "WS1 check-then-act walk, injects \\stable(G)",
+  "the guard value G is stable across check-then-act (TOCTOU)";
+  "\\authorized", "WS3 write-site walk, injects authorized(principal,OP)",
+  "every protected op has a GENUINE authorized principal (EoP / authorization)";
+  "\\tamper_evident", "WS4 checked ensures (hash-chain over \\hash)",
+  "every log append extends the mac chain (audit integrity / repudiation)";
+  "\\fuel", "WS6 ghost step counter at loop back-edges + call sites",
+  "the per-site step counter never exceeds N (bounded work / DoS)";
+  "\\flow", "WS7 write-site walk over \\leq / \\label",
+  "no flow-up in the user lattice (RBAC + vertical EoP)";
+]
+
+let print_contexts () =
+  Self.result "macsl \\context(...) catalog (uninterpreted obligations — no \
+               behavioural axiom). token | mechanism | obligation:";
+  List.iter
+    (fun (tok, mech, obl) -> Self.result "  %s | %s | %s" tok mech obl)
+    contexts_doc
+
 (* Instrument right after the AST is computed (NOT as a -main analysis), so any
    later analysis in the same run — `-macsl -wp`, `-macsl -eva` — sees the
    generated asserts.  This is what removes MetAcsl's -then-last footgun. *)
 let () =
+  Boot.Main.extend (fun () -> if List_contexts.get () then print_contexts ());
   Ast.apply_after_computed run;
   register_parsing ()
